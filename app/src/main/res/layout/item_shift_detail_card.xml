@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginBottom="16dp"
+    android:clipChildren="false"
+    android:clipToPadding="false"
+    android:paddingStart="4dp"
+    android:paddingEnd="4dp">
+
+    <androidx.cardview.widget.CardView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        app:cardCornerRadius="8dp"
+        app:cardElevation="4dp"
+        app:cardBackgroundColor="@color/card_background_color">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <!-- Date and Time -->
+            <TextView
+                android:id="@+id/shiftDateTime"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Sat 12/20 6:00PM - 10:00PM"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textColor="@color/text_primary"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginBottom="4dp" />
+
+            <!-- Posted By (for available shifts) - MOVED UP -->
+            <TextView
+                android:id="@+id/postedByText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Posted by John Doe 5 minutes ago"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginBottom="8dp"
+                android:visibility="gone" />
+
+            <!-- Position -->
+            <TextView
+                android:id="@+id/shiftPosition"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Salad (Production)"
+                android:textSize="14sp"
+                android:textColor="@color/text_primary"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginBottom="12dp" />
+
+            <!-- Coworkers Header Wrapper -->
+            <RelativeLayout
+                android:id="@+id/coworkersHeaderWrapper"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="8dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/coworkersHeader"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_alignParentStart="true"
+                    android:layout_centerVertical="true"
+                    android:includeFontPadding="false"
+                    android:text="SCHEDULE"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/work_day_green" />
+
+                <ImageButton
+                    android:id="@+id/expandCoworkersButton"
+                    android:layout_width="32dp"
+                    android:layout_height="32dp"
+                    android:padding="4dp"
+                    android:layout_alignParentEnd="true"
+                    android:layout_centerVertical="true"
+                    android:src="@drawable/ic_expand"
+                    android:background="?selectableItemBackgroundBorderless"
+                    app:tint="@color/work_day_green" />
+            </RelativeLayout>
+
+            <!-- Coworkers Chart (New) -->
+            <HorizontalScrollView
+                android:id="@+id/coworkersChartScrollView"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:visibility="gone">
+                
+                <RelativeLayout
+                    android:id="@+id/coworkersChartContainer"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+            </HorizontalScrollView>
+
+            <!-- Coworkers List (Legacy/Home) -->
+            <LinearLayout
+                android:id="@+id/coworkersContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
+            <!-- Pickup Requests (for available shifts) -->
+            <TextView
+                android:id="@+id/pickupAttemptsText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Pickup Attempts (0)"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:textColor="@color/text_primary"
+                android:layout_marginTop="12dp"
+                android:layout_marginBottom="8dp"
+                android:visibility="gone" />
+
+            <!-- Pickup Requests List -->
+            <LinearLayout
+                android:id="@+id/pickupRequestsContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone" />
+
+            <!-- Location -->
+            <TextView
+                android:id="@+id/shiftLocation"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="#12345 - 123 Main St, City, ST"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginTop="12dp" />
+
+            <!-- Action Button (Post/Accept) -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/cardActionButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="Post"
+                android:textColor="@android:color/white"
+                app:backgroundTint="@color/work_day_green"
+                android:visibility="gone" />
+
+        </LinearLayout>
+
+    </androidx.cardview.widget.CardView>
+
+</FrameLayout>

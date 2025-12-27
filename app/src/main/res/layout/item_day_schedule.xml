@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@color/card_background_color"
+    android:layout_marginBottom="16dp"
+    android:paddingBottom="16dp">
+
+    <include layout="@layout/layout_day_schedule_content" />
+
+</LinearLayout>

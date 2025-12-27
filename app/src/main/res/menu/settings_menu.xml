@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <item
+        android:id="@+id/menu_workday"
+        android:icon="@drawable/ic_book"
+        android:title="Workday Learning" />
+    <item
+        android:id="@+id/menu_time_off"
+        android:icon="@drawable/ic_airplane"
+        android:title="Request Time Off" />
+    <item
+        android:id="@+id/menu_availability"
+        android:icon="@drawable/ic_clock"
+        android:title="Availability" />
+    <item
+        android:id="@+id/menu_corc"
+        android:title="CORC"
+        android:icon="@drawable/ic_shield"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/menu_logout"
+        android:title="Log Out"
+        android:icon="@drawable/ic_logout"
+        app:showAsAction="never" />
+</menu>
