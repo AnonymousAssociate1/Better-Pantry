@@ -10,7 +10,7 @@ on:
   push:
     branches:
       - 'main'
-          tags:
+  tags:
       - 'v*'  # Trigger on version tags like v1.0.0
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
