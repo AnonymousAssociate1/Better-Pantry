@@ -436,11 +436,14 @@ class HomeFragment : Fragment() {
                 }
             }
             
-            showDayScheduleDialog(DaySchedule(date, allShiftsForDay))
+            showDayScheduleDialog(DaySchedule(date, allShiftsForDay.sortedBy { it.shift.startDateTime }))
         }
     }
 
     private fun showShiftDetailDialog(myShifts: List<Shift>, availableShifts: List<Shift>, fromCalendarClick: Boolean = false, customTitle: String? = null, isNested: Boolean = false) {
+        val sortedMyShifts = myShifts.sortedBy { it.startDateTime }
+        val sortedAvailableShifts = availableShifts.sortedBy { it.startDateTime }
+
         val dialog = Dialog(requireContext())
         detailDialog = dialog
         dialog.setContentView(R.layout.dialog_shift_detail)
@@ -460,8 +463,8 @@ class HomeFragment : Fragment() {
 
         // Determine context if no custom title
         if (customTitle == null) {
-            if (myShifts.size == 1 && availableShifts.isEmpty()) {
-                val shift = myShifts[0]
+            if (sortedMyShifts.size == 1 && sortedAvailableShifts.isEmpty()) {
+                val shift = sortedMyShifts[0]
                 if (shift.employeeId != authManager.getUserId()) {
                     // Coworker
                     titleText = getEmployeeName(shift.employeeId)
@@ -470,17 +473,17 @@ class HomeFragment : Fragment() {
                     // Me
                     titleText = "Shift Details"
                 }
-            } else if (availableShifts.size == 1 && myShifts.isEmpty()) {
+            } else if (sortedAvailableShifts.size == 1 && sortedMyShifts.isEmpty()) {
                 titleText = "Available Shift"
             }
         } else {
             // Apply hiding logic even if custom title is provided
-             if (myShifts.size == 1 && availableShifts.isEmpty()) {
-                val shift = myShifts[0]
+             if (sortedMyShifts.size == 1 && sortedAvailableShifts.isEmpty()) {
+                val shift = sortedMyShifts[0]
                 if (shift.employeeId != authManager.getUserId()) {
                      hideCoworkersForMyShifts = true
                 }
-            } else if (availableShifts.size == 1 && myShifts.isEmpty()) {
+            } else if (sortedAvailableShifts.size == 1 && sortedMyShifts.isEmpty()) {
                 // Keep default false
             }
         }
@@ -488,12 +491,12 @@ class HomeFragment : Fragment() {
         dialogTitle.text = titleText
         shiftsContainer.removeAllViews()
 
-        myShifts.forEach { shift ->
+        sortedMyShifts.forEach { shift ->
             addShiftCard(shiftsContainer, shift, isAvailable = false, hideCoworkers = hideCoworkersForMyShifts)
         }
 
-        val showAsTitle = fromCalendarClick && myShifts.isEmpty() && availableShifts.isNotEmpty()
-        val showAsSeparator = myShifts.isNotEmpty() && availableShifts.isNotEmpty()
+        val showAsTitle = fromCalendarClick && sortedMyShifts.isEmpty() && sortedAvailableShifts.isNotEmpty()
+        val showAsSeparator = sortedMyShifts.isNotEmpty() && sortedAvailableShifts.isNotEmpty()
 
         if (showAsTitle || showAsSeparator) {
             val separator = TextView(requireContext()).apply {
@@ -514,7 +517,7 @@ class HomeFragment : Fragment() {
             shiftsContainer.addView(separator)
         }
 
-        availableShifts.forEach { shift ->
+        sortedAvailableShifts.forEach { shift ->
             addShiftCard(shiftsContainer, shift, isAvailable = true, hideCoworkers = hideCoworkersForAvailable)
         }
 
@@ -823,7 +826,7 @@ class HomeFragment : Fragment() {
                                     }
                                 }
                                 
-                                                        showDayScheduleDialog(DaySchedule(day, allShiftsForDay), shift)
+                                                        showDayScheduleDialog(DaySchedule(day, allShiftsForDay.sortedBy { it.shift.startDateTime }), shift)
                     }
                 }
             }
@@ -1067,7 +1070,7 @@ class HomeFragment : Fragment() {
                     val date = LocalDate.parse(originalShift.startDateTime?.substring(0, 10))
                     val myShiftsOnDate = newSchedule.currentShifts?.filter {
                         LocalDate.parse(it.startDateTime?.substring(0, 10)) == date
-                    } ?: emptyList()
+                    }?.sortedBy { it.startDateTime } ?: emptyList()
                     val availableShiftsOnDate = newSchedule.track?.filter { track ->
                         track.type == "AVAILABLE" && track.primaryShiftRequest?.state == "AVAILABLE"
                     }?.mapNotNull { it.primaryShiftRequest?.shift }?.filter {

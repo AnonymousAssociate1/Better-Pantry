@@ -369,7 +369,7 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
                 }
             }
             if (shiftsForDay.isNotEmpty()) {
-                days.add(DaySchedule(currentDate, shiftsForDay))
+                days.add(DaySchedule(currentDate, shiftsForDay.sortedBy { it.shift.startDateTime }))
             }
             currentDate = currentDate.plusDays(1)
         }
@@ -557,7 +557,7 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
                     }
                 }
                 
-                showDayScheduleDialog(DaySchedule(day, allShiftsForDay), s)
+                showDayScheduleDialog(DaySchedule(day, allShiftsForDay.sortedBy { it.shift.startDateTime }), s)
             }
         } else {
             coworkersHeaderWrapper.visibility = View.GONE

@@ -19,8 +19,7 @@
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:clipChildren="false"
-            android:clipToPadding="false"
-            android:paddingBottom="80dp">
+            android:clipToPadding="false">
 
             <!-- Header: Updated + Title + Settings -->
             <androidx.constraintlayout.widget.ConstraintLayout

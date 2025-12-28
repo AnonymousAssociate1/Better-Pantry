@@ -655,8 +655,11 @@ class NotificationsFragment : Fragment() {
             dialogTitle.text = "Shift Details"
         }
         
-        val allShifts = myShifts + availableShifts
-        val availableShiftsSet = availableShifts.toSet()
+        val sortedMyShifts = myShifts.sortedBy { it.startDateTime }
+        val sortedAvailableShifts = availableShifts.sortedBy { it.startDateTime }
+
+        val allShifts = sortedMyShifts + sortedAvailableShifts
+        val availableShiftsSet = sortedAvailableShifts.toSet()
 
         // Reuse existing views to prevent layout jump
         allShifts.forEachIndexed { index, shift ->
@@ -1016,7 +1019,7 @@ class NotificationsFragment : Fragment() {
                         }
                     }
                     
-                    showDayScheduleDialog(DaySchedule(day, allShiftsForDay), shift)
+                    showDayScheduleDialog(DaySchedule(day, allShiftsForDay.sortedBy { it.shift.startDateTime }), shift)
                 }
             } else {
                 coworkersHeaderWrapper.visibility = View.GONE
