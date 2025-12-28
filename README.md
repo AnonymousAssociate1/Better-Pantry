@@ -1,3 +1,5 @@
+[![Latest Release](https://img.shields.io/github/v/release/AnonymousAssociate1/Better-Pantry?label=Download&style=for-the-badge)](https://github.com/AnonymousAssociate1/Better-Pantry/releases/latest)
+
 **THIS APP IS NOT OFFICIAL NOR APPROVED BY PANERA BREAD.**
 
 This is a community project.
