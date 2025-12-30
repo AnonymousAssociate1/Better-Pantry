@@ -53,6 +53,8 @@ class HomeFragment : Fragment() {
     private lateinit var availableShiftsTitle: TextView
     private lateinit var updatedText: TextView
     private lateinit var swipeRefreshLayout: SwipeRefreshLayout
+    private lateinit var updateCard: androidx.cardview.widget.CardView
+    private lateinit var updateDivider: View
 
     private var scheduleData: ScheduleData? = null
     private val handler = Handler(Looper.getMainLooper())
@@ -82,6 +84,8 @@ class HomeFragment : Fragment() {
         availableShiftsTitle = view.findViewById(R.id.availableShiftsTitle)
         updatedText = view.findViewById(R.id.updatedText)
         swipeRefreshLayout = view.findViewById(R.id.swipeRefreshLayout)
+        updateCard = view.findViewById(R.id.updateCard)
+        updateDivider = view.findViewById(R.id.updateDivider)
         val settingsButton: android.widget.ImageButton = view.findViewById(R.id.settingsButton)
 
         settingsButton.setOnClickListener { showSettingsMenu(it) }
@@ -98,6 +102,7 @@ class HomeFragment : Fragment() {
         }
 
         loadSchedule()
+        checkForUpdates()
     }
 
     private fun showSettingsMenu(anchor: View) {
@@ -1421,5 +1426,60 @@ class HomeFragment : Fragment() {
                 false
             }
         }
+    }
+
+    private fun checkForUpdates() {
+        if (updateAvailable) {
+            showUpdateCard(updateUrl)
+            return
+        }
+        
+        if (hasCheckedForUpdates) return
+
+        hasCheckedForUpdates = true
+        lifecycleScope.launch {
+            try {
+                val release = apiService.getLatestRelease()
+                if (release != null) {
+                    val currentVersion = com.anonymousassociate.betterpantry.BuildConfig.VERSION_NAME
+                    if (isNewerVersion(currentVersion, release.tag_name)) {
+                        updateAvailable = true
+                        updateUrl = release.html_url
+                        showUpdateCard(release.html_url)
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    private fun showUpdateCard(url: String?) {
+        if (url == null) return
+        updateCard.visibility = View.VISIBLE
+        updateDivider.visibility = View.VISIBLE
+        updateCard.setOnClickListener {
+            (requireActivity() as? com.anonymousassociate.betterpantry.MainActivity)?.openBrowser(url)
+        }
+    }
+
+    private fun isNewerVersion(current: String, latest: String): Boolean {
+        val currentParts = current.split(".").map { it.toIntOrNull() ?: 0 }
+        val latestParts = latest.removePrefix("v").split(".").map { it.toIntOrNull() ?: 0 }
+
+        val length = maxOf(currentParts.size, latestParts.size)
+        for (i in 0 until length) {
+            val c = currentParts.getOrElse(i) { 0 }
+            val l = latestParts.getOrElse(i) { 0 }
+            if (l > c) return true
+            if (l < c) return false
+        }
+        return false
+    }
+
+    companion object {
+        private var hasCheckedForUpdates = false
+        private var updateAvailable = false
+        private var updateUrl: String? = null
     }
 }

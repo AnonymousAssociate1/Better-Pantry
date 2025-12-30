@@ -336,5 +336,33 @@ class PantryApiService(private val authManager: AuthManager) {
         }
     }
 
+    suspend fun getLatestRelease(): GitHubRelease? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val url = "https://api.github.com/repos/AnonymousAssociate1/Better-Pantry/releases/latest"
+                val request = Request.Builder()
+                    .url(url)
+                    .header("Accept", "application/vnd.github+json")
+                    .get()
+                    .build()
+
+                val response = client.newCall(request).execute()
+                if (response.isSuccessful) {
+                    val json = response.body?.string()
+                    gson.fromJson(json, GitHubRelease::class.java)
+                } else {
+                    null
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                null
+            }
+        }
+    }
 
 }
+
+data class GitHubRelease(
+    val tag_name: String,
+    val html_url: String
+)
