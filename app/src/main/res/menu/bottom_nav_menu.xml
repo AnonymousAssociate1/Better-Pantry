@@ -11,6 +11,11 @@
         android:title="Schedule" />
 
     <item
+        android:id="@+id/nav_people"
+        android:icon="@drawable/ic_people"
+        android:title="People" />
+
+    <item
         android:id="@+id/nav_notifications"
         android:icon="@drawable/ic_notification"
         android:title="Notifications" />

@@ -1,0 +1,306 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/swipeRefreshLayout"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="?android:attr/windowBackground">
+
+    <androidx.core.widget.NestedScrollView
+        android:id="@+id/nestedScrollView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:fillViewport="true"
+        android:clipChildren="false"
+        android:clipToPadding="false">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:clipChildren="false"
+            android:clipToPadding="false">
+
+                                    <!-- Header: Updated + Title + Date + Close -->
+
+                                    <androidx.constraintlayout.widget.ConstraintLayout
+
+                                        android:layout_width="match_parent"
+
+                                        android:layout_height="wrap_content"
+
+                                        android:paddingHorizontal="16dp">
+
+                        
+
+                                        <ImageButton
+
+                                            android:id="@+id/settingsButton"
+
+                                            android:layout_width="40dp"
+
+                                            android:layout_height="40dp"
+
+                                            android:background="?attr/selectableItemBackgroundBorderless"
+
+                                            android:src="@drawable/ic_settings"
+
+                                            android:scaleType="centerInside"
+
+                                            android:contentDescription="Settings"
+
+                                            android:tint="@color/text_primary"
+
+                                            app:layout_constraintTop_toTopOf="@id/updatedText"
+
+                                            app:layout_constraintBottom_toBottomOf="@id/nameText"
+
+                                            app:layout_constraintEnd_toEndOf="parent" />
+
+                        
+
+                                        <TextView
+
+                                            android:id="@+id/updatedText"
+
+                                            android:layout_width="wrap_content"
+
+                                            android:layout_height="wrap_content"
+
+                                            android:layout_marginTop="16dp"
+
+                                            android:text="Updated now"
+
+                                            android:textSize="12sp"
+
+                                            android:textColor="@color/text_secondary"
+
+                                            app:layout_constraintTop_toTopOf="parent"
+
+                                            app:layout_constraintStart_toStartOf="parent"
+
+                                            app:layout_constraintEnd_toEndOf="parent" />
+
+                        
+
+                                        <TextView
+
+                                            android:id="@+id/nameText"
+
+                                            android:layout_width="0dp"
+
+                                            android:layout_height="wrap_content"
+
+                                            android:layout_marginTop="4dp"
+
+                                            android:text="NAME"
+
+                                            android:textSize="18sp"
+
+                                            android:textStyle="bold"
+
+                                            android:textColor="@color/work_day_green"
+
+                                            android:letterSpacing="0.05"
+
+                                            android:gravity="center"
+
+                                            android:textAllCaps="true"
+
+                                            app:layout_constraintTop_toBottomOf="@id/updatedText"
+
+                                            app:layout_constraintStart_toStartOf="parent"
+
+                                            app:layout_constraintEnd_toEndOf="parent" />
+
+                        
+
+                                        <TextView
+
+                                            android:id="@+id/subTitleText"
+
+                                            android:layout_width="0dp"
+
+                                            android:layout_height="wrap_content"
+
+                                            android:text="SCHEDULED SHIFTS"
+
+                                            android:textSize="18sp"
+
+                                            android:textStyle="bold"
+
+                                            android:textColor="@color/work_day_green"
+
+                                            android:letterSpacing="0.05"
+
+                                            android:gravity="center"
+
+                                            android:textAllCaps="true"
+
+                                            app:layout_constraintTop_toBottomOf="@id/nameText"
+
+                                            app:layout_constraintStart_toStartOf="parent"
+
+                                            app:layout_constraintEnd_toEndOf="parent" />
+
+                        
+
+                                        <TextView
+
+                                            android:id="@+id/dateRangeText"
+
+                                            android:layout_width="wrap_content"
+
+                                            android:layout_height="wrap_content"
+
+                                            android:layout_marginTop="4dp"
+
+                                            android:layout_marginBottom="16dp"
+
+                                            android:text=""
+
+                                            android:textSize="16sp"
+
+                                            android:textStyle="bold"
+
+                                            android:textColor="@color/text_primary"
+
+                                            app:layout_constraintTop_toBottomOf="@id/subTitleText"
+
+                                            app:layout_constraintStart_toStartOf="parent"
+
+                                            app:layout_constraintEnd_toEndOf="parent"
+
+                                            app:layout_constraintBottom_toBottomOf="parent" />
+
+                        
+
+                                        <ImageButton
+
+                                            android:id="@+id/closeButton"
+
+                                            android:layout_width="40dp"
+
+                                            android:layout_height="40dp"
+
+                                            android:background="?attr/selectableItemBackgroundBorderless"
+
+                                            android:src="@drawable/ic_close"
+
+                                            android:scaleType="centerInside"
+
+                                            android:contentDescription="Close"
+
+                                            android:tint="@color/text_primary"
+
+                                            app:layout_constraintTop_toTopOf="@id/subTitleText"
+
+                                            app:layout_constraintBottom_toBottomOf="@id/dateRangeText"
+
+                                            app:layout_constraintEnd_toEndOf="parent" />
+
+                        
+
+                                    </androidx.constraintlayout.widget.ConstraintLayout>
+
+            <!-- Calendar Headers -->
+            <LinearLayout
+                android:id="@+id/dayHeadersLayout"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:paddingBottom="8dp">
+
+                <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="W" android:gravity="center" android:textStyle="bold" android:textColor="@color/text_primary" android:textSize="14sp" />
+                <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="T" android:gravity="center" android:textStyle="bold" android:textColor="@color/text_primary" android:textSize="14sp" />
+                <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="F" android:gravity="center" android:textStyle="bold" android:textColor="@color/text_primary" android:textSize="14sp" />
+                <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="S" android:gravity="center" android:textStyle="bold" android:textColor="@color/text_primary" android:textSize="14sp" />
+                <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="S" android:gravity="center" android:textStyle="bold" android:textColor="@color/text_primary" android:textSize="14sp" />
+                <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="M" android:gravity="center" android:textStyle="bold" android:textColor="@color/text_primary" android:textSize="14sp" />
+                <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="T" android:gravity="center" android:textStyle="bold" android:textColor="@color/text_primary" android:textSize="14sp" />
+            </LinearLayout>
+
+            <!-- Calendar Grid -->
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:clipChildren="false"
+                android:clipToPadding="false"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:paddingBottom="8dp">
+
+                <androidx.cardview.widget.CardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:cardElevation="4dp"
+                    app:cardCornerRadius="8dp"
+                    app:cardBackgroundColor="@color/card_background_color">
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/calendarRecyclerView"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:padding="4dp"
+                        android:clipToPadding="false"
+                        android:nestedScrollingEnabled="false" />
+
+                </androidx.cardview.widget.CardView>
+
+            </FrameLayout>
+
+            <!-- Shifts Lists -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:paddingTop="8dp"
+                android:paddingBottom="16dp"
+                android:clipChildren="false"
+                android:clipToPadding="false">
+
+                <!-- Scheduled shifts list -->
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/shiftsRecyclerView"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:clipChildren="false"
+                    android:clipToPadding="false"
+                    android:nestedScrollingEnabled="false" />
+
+                <!-- Available shifts header -->
+                <TextView
+                    android:id="@+id/availableShiftsTitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="24dp"
+                    android:layout_marginBottom="16dp"
+                    android:text="AVAILABLE SHIFTS"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/work_day_green"
+                    android:letterSpacing="0.05"
+                    android:layout_gravity="center"
+                    android:visibility="gone" />
+
+                <!-- Available shifts list -->
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/availableShiftsRecyclerView"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:clipChildren="false"
+                    android:clipToPadding="false"
+                    android:nestedScrollingEnabled="false" />
+
+            </LinearLayout>
+
+        </LinearLayout>
+
+    </androidx.core.widget.NestedScrollView>
+
+</androidx.swiperefreshlayout.widget.SwipeRefreshLayout>

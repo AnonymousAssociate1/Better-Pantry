@@ -6,6 +6,18 @@
     android:layout_height="match_parent"
     android:background="@color/background_color">
 
+    <View
+        android:id="@+id/statusBarBackground"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:background="@color/background_color"
+        android:alpha="0.9"
+        android:translationZ="10dp"
+        android:outlineProvider="none"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
     <WebView
         android:id="@+id/loginWebView"
         android:layout_width="match_parent"
@@ -26,15 +38,16 @@
         android:layout_width="match_parent"
         android:layout_height="8dp"
         android:background="@drawable/shadow_top"
+        android:elevation="10dp"
         app:layout_constraintBottom_toTopOf="@id/bottomNavigation"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
     <View
         android:id="@+id/navBackground"
-        android:layout_width="match_parent"
+        android:layout_width="0dp"
         android:layout_height="0dp"
-        android:background="?android:attr/windowBackground"
+        android:background="@color/background_color"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintBottom_toBottomOf="parent"
@@ -42,10 +55,10 @@
 
     <com.google.android.material.bottomnavigation.BottomNavigationView
         android:id="@+id/bottomNavigation"
-        android:layout_width="0dp"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:background="@android:color/transparent"
-        app:elevation="0dp"
+        style="@style/CustomBottomNavigation"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"

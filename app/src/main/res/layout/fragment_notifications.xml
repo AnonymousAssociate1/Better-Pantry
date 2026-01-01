@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/rootContainer"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical">
@@ -39,8 +40,8 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Inbox"
-                android:textColor="@color/work_day_green"
-                app:strokeColor="@color/work_day_green" />
+                android:textColor="@color/nav_text_color"
+                app:strokeColor="@color/nav_text_color" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnDeleted"
@@ -48,8 +49,8 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Deleted"
-                android:textColor="@color/work_day_green"
-                app:strokeColor="@color/work_day_green" />
+                android:textColor="@color/nav_text_color"
+                app:strokeColor="@color/nav_text_color" />
 
         </com.google.android.material.button.MaterialButtonToggleGroup>
 

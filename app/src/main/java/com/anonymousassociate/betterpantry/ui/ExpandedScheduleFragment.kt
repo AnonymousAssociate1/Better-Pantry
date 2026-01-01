@@ -10,18 +10,14 @@ import android.widget.LinearLayout
 import android.widget.RelativeLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
-import androidx.fragment.app.Fragment
+import androidx.fragment.app.DialogFragment
 import androidx.lifecycle.lifecycleScope
-import com.google.android.material.button.MaterialButton
 import com.anonymousassociate.betterpantry.AuthManager
 import com.anonymousassociate.betterpantry.PantryApiService
 import com.anonymousassociate.betterpantry.R
 import kotlinx.coroutines.launch
-import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
-
-import androidx.fragment.app.DialogFragment
 
 class ExpandedScheduleFragment : DialogFragment() {
 
@@ -30,9 +26,13 @@ class ExpandedScheduleFragment : DialogFragment() {
 
     companion object {
         var tempDaySchedule: DaySchedule? = null
-        
-        fun newInstance(day: DaySchedule): ExpandedScheduleFragment {
+        var tempFocusTime: LocalDateTime? = null
+        var tempFocusShiftId: String? = null
+
+        fun newInstance(day: DaySchedule, focusTime: LocalDateTime? = null, focusShiftId: String? = null): ExpandedScheduleFragment {
             tempDaySchedule = day
+            tempFocusTime = focusTime
+            tempFocusShiftId = focusShiftId
             return ExpandedScheduleFragment()
         }
     }
@@ -57,18 +57,18 @@ class ExpandedScheduleFragment : DialogFragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        
+
         authManager = AuthManager(requireContext())
         apiService = PantryApiService(authManager)
 
-        val day = tempDaySchedule ?: return 
-        
+        val day = tempDaySchedule ?: return
+
         val header = view.findViewById<TextView>(R.id.expandedDateHeader)
         val closeBtn = view.findViewById<ImageButton>(R.id.closeExpandedButton)
         val container = view.findViewById<RelativeLayout>(R.id.expandedChartContainer)
 
         header.text = day.date.format(DateTimeFormatter.ofPattern("EEEE, MMM d"))
-        closeBtn.setOnClickListener { 
+        closeBtn.setOnClickListener {
             if (showsDialog) {
                 dismiss()
             } else {
@@ -81,11 +81,13 @@ class ExpandedScheduleFragment : DialogFragment() {
             if (width > 0) {
                 // Pass a listener to handle clicks
                 val result = ChartRenderer.drawChart(
-                    requireContext(), 
-                    container, 
-                    day, 
-                    isExpanded = true, 
-                    containerWidth = width, 
+                    requireContext(),
+                    container,
+                    day,
+                    isExpanded = true,
+                    containerWidth = width,
+                    focusTime = tempFocusTime,
+                    focusShiftId = tempFocusShiftId,
                     listener = object : ScheduleInteractionListener {
                         override fun onExpandClick(day: DaySchedule) {
                             // Already expanded
@@ -96,6 +98,18 @@ class ExpandedScheduleFragment : DialogFragment() {
                         }
                     }
                 )
+
+                // Scroll vertically to focus shift
+                val focusY = result.third
+                if (focusY != null) {
+                    val verticalScroll = view.findViewById<android.widget.ScrollView>(R.id.expandedVerticalScrollView)
+                    verticalScroll?.post {
+                        val screenHeight = verticalScroll.height
+                        // Center vertically: target Y - half screen
+                        val targetY = (focusY - screenHeight / 2).coerceAtLeast(0)
+                        verticalScroll.smoothScrollTo(0, targetY)
+                    }
+                }
             }
         }
     }
@@ -105,16 +119,16 @@ class ExpandedScheduleFragment : DialogFragment() {
         dialog.setContentView(R.layout.dialog_shift_detail)
         dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
-        
+
         val title = dialog.findViewById<TextView>(R.id.dialogTitle)
         val container = dialog.findViewById<LinearLayout>(R.id.shiftsContainer)
         val close = dialog.findViewById<View>(R.id.closeButton)
-        
+
         container.removeAllViews()
 
         // Inflate item_shift_detail_card for ALL shifts
         val cardView = LayoutInflater.from(requireContext()).inflate(R.layout.item_shift_detail_card, container, false)
-        
+
         val shiftDateTime = cardView.findViewById<TextView>(R.id.shiftDateTime)
         val shiftPosition = cardView.findViewById<TextView>(R.id.shiftPosition)
         val postedByText = cardView.findViewById<TextView>(R.id.postedByText)
@@ -124,7 +138,7 @@ class ExpandedScheduleFragment : DialogFragment() {
         val coworkersContainer = cardView.findViewById<LinearLayout>(R.id.coworkersContainer)
         val pickupAttemptsText = cardView.findViewById<TextView>(R.id.pickupAttemptsText)
         val pickupRequestsContainer = cardView.findViewById<LinearLayout>(R.id.pickupRequestsContainer)
-        
+
         val s = enrichedShift.shift
         try {
             val start = LocalDateTime.parse(s.startDateTime)
@@ -135,13 +149,13 @@ class ExpandedScheduleFragment : DialogFragment() {
         } catch(e: Exception) {
             shiftDateTime.text = s.startDateTime
         }
-        
+
         val station = getWorkstationDisplayName(s.workstationId ?: s.workstationCode, s.workstationName)
         shiftPosition.text = station
-        
+
         // Location from EnrichedShift
         shiftLocation.text = enrichedShift.location ?: "#${s.cafeNumber ?: ""}"
-        
+
         // Posted By / Status
         if (enrichedShift.isAvailable) {
             title.text = "Available Shift"
@@ -149,10 +163,6 @@ class ExpandedScheduleFragment : DialogFragment() {
                 postedByText.text = "Status: Pickup Requested"
                 postedByText.visibility = View.VISIBLE
             } else if (!enrichedShift.requesterName.isNullOrEmpty()) {
-                // getTimeAgo helper is needed here? I can't access it unless I duplicate it or put it in Utils.
-                // For now, I'll just show the name. To calculate TimeAgo I'd need the helper.
-                // I'll assume just showing name is OK or I can duplicate the helper.
-                // Let's duplicate it locally to be safe.
                 val timeAgo = getTimeAgo(enrichedShift.requestedAt)
                 postedByText.text = "Posted by ${enrichedShift.requesterName} $timeAgo"
                 postedByText.visibility = View.VISIBLE
@@ -163,14 +173,14 @@ class ExpandedScheduleFragment : DialogFragment() {
             title.text = "${enrichedShift.firstName} ${enrichedShift.lastName ?: ""}"
             postedByText.visibility = View.GONE
         }
-        
+
         // Manager Notes
         if (!enrichedShift.managerNotes.isNullOrEmpty()) {
             val existing = if (postedByText.visibility == View.VISIBLE) postedByText.text.toString() + "\n" else ""
             postedByText.text = "${existing}Note: ${enrichedShift.managerNotes}".trim()
             postedByText.visibility = View.VISIBLE
         }
-        
+
         // Coworkers
         if (!isNested && !enrichedShift.coworkers.isNullOrEmpty()) {
             coworkersHeader.visibility = View.VISIBLE
@@ -194,7 +204,7 @@ class ExpandedScheduleFragment : DialogFragment() {
             val requests = enrichedShift.pickupRequests ?: emptyList()
             pickupAttemptsText.text = "Pickup Requests (${requests.size})"
             pickupAttemptsText.visibility = View.VISIBLE
-            
+
             if (requests.isNotEmpty()) {
                 pickupRequestsContainer.visibility = View.VISIBLE
                 pickupRequestsContainer.removeAllViews()
@@ -240,9 +250,9 @@ class ExpandedScheduleFragment : DialogFragment() {
         } else {
             actionButton.visibility = View.GONE
         }
-        
+
         container.addView(cardView)
-        
+
         close.setOnClickListener { dialog.dismiss() }
         dialog.show()
     }
@@ -270,7 +280,7 @@ class ExpandedScheduleFragment : DialogFragment() {
             ""
         }
     }
-    
+
     private fun showConfirmationDialog(parentDialog: Dialog, title: String, message: String, onConfirm: () -> Unit) {
         com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
             .setTitle(title)
@@ -283,7 +293,7 @@ class ExpandedScheduleFragment : DialogFragment() {
 
     private fun performPickup(enrichedShift: EnrichedShift, dialog: Dialog) {
         val requestId = enrichedShift.requestId ?: return
-        
+
         lifecycleScope.launch {
             try {
                 val payload = org.json.JSONObject().apply {
@@ -298,7 +308,7 @@ class ExpandedScheduleFragment : DialogFragment() {
                     }
                     put("receiveAssociate", receiveAssociate)
                 }
-                
+
                 val success = apiService.acceptShiftPickup(payload.toString())
                 if (success) {
                     dialog.dismiss()
@@ -327,7 +337,7 @@ class ExpandedScheduleFragment : DialogFragment() {
                     }
                     put("giveAssociate", giveAssociate)
                 }
-                
+
                 val responseCode = apiService.cancelPostShift(payload.toString())
                 if (responseCode in 200..299) {
                     dialog.dismiss()
@@ -374,7 +384,10 @@ class ExpandedScheduleFragment : DialogFragment() {
             "MANAGERADMIN_1" to "Manager",
             "MANAGERADMIN" to "Manager",
             "PEOPLEMANAGEMENT_1" to "Manager",
-            "PEOPLEMANAGEMENT" to "Manager"
+            "PEOPLEMANAGEMENT" to "Manager",
+            "LABOR_MANAGEMENT" to "Manager",
+            "LABORMANAGEMENT" to "Manager",
+            "Labor Management" to "Manager"
         )
         if (workstationId != null) {
             val mapped = customNames[workstationId]
@@ -382,7 +395,7 @@ class ExpandedScheduleFragment : DialogFragment() {
         }
         return fallbackName ?: workstationId ?: "Unknown"
     }
-    
+
     override fun onDestroyView() {
         super.onDestroyView()
     }

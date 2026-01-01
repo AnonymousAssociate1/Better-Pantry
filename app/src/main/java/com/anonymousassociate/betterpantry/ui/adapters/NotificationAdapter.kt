@@ -77,8 +77,11 @@ class NotificationAdapter(
             "1ST_CASHIER" to "Cashier 1",
             "QC_1" to "QC 1",
             "QC_2" to "QC 2",
-            "DTORDERTAKER" to "DriveThru",
-            "1ST_DR" to "Dining Room"
+            "PEOPLEMANAGEMENT_1" to "Manager",
+            "PEOPLEMANAGEMENT" to "Manager",
+            "LABOR_MANAGEMENT" to "Manager",
+            "LABORMANAGEMENT" to "Manager",
+            "Labor Management" to "Manager"
         )
         if (workstationId != null) {
             val mapped = customNames[workstationId]

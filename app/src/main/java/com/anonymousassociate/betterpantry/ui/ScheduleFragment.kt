@@ -72,6 +72,18 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
         updatedText = view.findViewById(R.id.updatedText)
         swipeRefreshLayout = view.findViewById(R.id.swipeRefreshLayout)
         val settingsButton: ImageButton = view.findViewById(R.id.settingsButton)
+        
+        val nestedScrollView = view.findViewById<androidx.core.widget.NestedScrollView>(R.id.nestedScrollView)
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(nestedScrollView) { v, insets ->
+            val bars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            v.setPadding(v.paddingLeft, bars.top, v.paddingRight, v.paddingBottom)
+            
+            // Adjust refresh indicator position
+            val refreshTarget = bars.top + (32 * resources.displayMetrics.density).toInt()
+            swipeRefreshLayout.setProgressViewOffset(false, 0, refreshTarget)
+            
+            insets
+        }
 
         recyclerView.layoutManager = LinearLayoutManager(context)
         
@@ -938,7 +950,10 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
             "MANAGERADMIN_1" to "Manager",
             "MANAGERADMIN" to "Manager",
             "PEOPLEMANAGEMENT_1" to "Manager",
-            "PEOPLEMANAGEMENT" to "Manager"
+            "PEOPLEMANAGEMENT" to "Manager",
+            "LABOR_MANAGEMENT" to "Manager",
+            "LABORMANAGEMENT" to "Manager",
+            "Labor Management" to "Manager"
         )
         if (workstationId != null) {
             val mapped = customNames[workstationId]

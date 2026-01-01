@@ -91,7 +91,7 @@
             </RelativeLayout>
 
             <!-- Coworkers Chart (New) -->
-            <HorizontalScrollView
+            <com.anonymousassociate.betterpantry.ui.BetterHorizontalScrollView
                 android:id="@+id/coworkersChartScrollView"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -102,7 +102,7 @@
                     android:id="@+id/coworkersChartContainer"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content" />
-            </HorizontalScrollView>
+            </com.anonymousassociate.betterpantry.ui.BetterHorizontalScrollView>
 
             <!-- Coworkers List (Legacy/Home) -->
             <LinearLayout

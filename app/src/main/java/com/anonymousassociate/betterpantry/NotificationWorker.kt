@@ -640,11 +640,17 @@ class NotificationWorker(
 
                         "MANAGERADMIN" to "Manager",
 
-                        "PEOPLEMANAGEMENT_1" to "Manager",
+                                                "PEOPLEMANAGEMENT_1" to "Manager",
 
-                        "PEOPLEMANAGEMENT" to "Manager"
+                                                "PEOPLEMANAGEMENT" to "Manager",
 
-                    )
+                                                "LABOR_MANAGEMENT" to "Manager",
+
+                                                "LABORMANAGEMENT" to "Manager",
+
+                                                "Labor Management" to "Manager"
+
+                                            )
 
                     if (workstationId != null) {
 

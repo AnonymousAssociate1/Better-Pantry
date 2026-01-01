@@ -87,6 +87,18 @@ class HomeFragment : Fragment() {
         updateCard = view.findViewById(R.id.updateCard)
         updateDivider = view.findViewById(R.id.updateDivider)
         val settingsButton: android.widget.ImageButton = view.findViewById(R.id.settingsButton)
+        
+        val nestedScrollView = view.findViewById<androidx.core.widget.NestedScrollView>(R.id.nestedScrollView)
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(nestedScrollView) { v, insets ->
+            val bars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            v.setPadding(v.paddingLeft, bars.top, v.paddingRight, v.paddingBottom)
+            
+            // Adjust refresh indicator position
+            val refreshTarget = bars.top + (32 * resources.displayMetrics.density).toInt()
+            swipeRefreshLayout.setProgressViewOffset(false, 0, refreshTarget)
+            
+            insets
+        }
 
         settingsButton.setOnClickListener { showSettingsMenu(it) }
 
@@ -277,7 +289,7 @@ class HomeFragment : Fragment() {
     private fun displaySchedule(schedule: ScheduleData) {
         calendarAdapter.updateSchedule(schedule)
 
-        val distinctShifts = schedule.currentShifts?.distinctBy { it.shiftId }
+        val distinctShifts = schedule.currentShifts?.distinctBy { it.shiftId }?.sortedBy { it.startDateTime }
         if (distinctShifts != null) {
             val shiftAdapter = ShiftAdapter(
                 shifts = distinctShifts,
@@ -500,10 +512,9 @@ class HomeFragment : Fragment() {
             addShiftCard(shiftsContainer, shift, isAvailable = false, hideCoworkers = hideCoworkersForMyShifts)
         }
 
-        val showAsTitle = fromCalendarClick && sortedMyShifts.isEmpty() && sortedAvailableShifts.isNotEmpty()
         val showAsSeparator = sortedMyShifts.isNotEmpty() && sortedAvailableShifts.isNotEmpty()
 
-        if (showAsTitle || showAsSeparator) {
+        if (showAsSeparator) {
             val separator = TextView(requireContext()).apply {
                 text = "AVAILABLE SHIFTS"
                 textSize = 18f
@@ -515,7 +526,7 @@ class HomeFragment : Fragment() {
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply {
                     gravity = android.view.Gravity.CENTER
-                    topMargin = if (showAsTitle) 0 else 24.dpToPx()
+                    topMargin = 24.dpToPx()
                     bottomMargin = 16.dpToPx()
                 }
             }
@@ -1109,11 +1120,9 @@ class HomeFragment : Fragment() {
                             addShiftCard(shiftsContainer, shift, isAvailable = false, hideCoworkers = hideCoworkersForMyShifts)
                         }
                         
-                        val fromCalendarClick = myShiftsOnDate.isEmpty() && availableShiftsOnDate.isNotEmpty()
-                        val showAsTitle = fromCalendarClick && myShiftsOnDate.isEmpty() && availableShiftsOnDate.isNotEmpty()
                         val showAsSeparator = myShiftsOnDate.isNotEmpty() && availableShiftsOnDate.isNotEmpty()
 
-                        if (showAsTitle || showAsSeparator) {
+                        if (showAsSeparator) {
                             val separator = TextView(requireContext()).apply {
                                 text = "AVAILABLE SHIFTS"
                                 textSize = 18f
@@ -1125,7 +1134,7 @@ class HomeFragment : Fragment() {
                                     LinearLayout.LayoutParams.WRAP_CONTENT
                                 ).apply {
                                     gravity = android.view.Gravity.CENTER
-                                    topMargin = if (showAsTitle) 0 else 24.dpToPx()
+                                    topMargin = 24.dpToPx()
                                     bottomMargin = 16.dpToPx()
                                 }
                             }
@@ -1331,7 +1340,16 @@ class HomeFragment : Fragment() {
             "QC_1" to "QC 1",
             "QC_2" to "QC 2",
             "DTORDERTAKER" to "DriveThru",
-            "1ST_DR" to "Dining Room"
+            "1ST_DR" to "Dining Room",
+            "MANAGER_1" to "Manager",
+            "MANAGER" to "Manager",
+            "MANAGERADMIN_1" to "Manager",
+            "MANAGERADMIN" to "Manager",
+            "PEOPLEMANAGEMENT_1" to "Manager",
+            "PEOPLEMANAGEMENT" to "Manager",
+            "LABOR_MANAGEMENT" to "Manager",
+            "LABORMANAGEMENT" to "Manager",
+            "Labor Management" to "Manager"
         )
         var name = customNames[workstationId]
         if (name == null && fallbackName != null) {
@@ -1367,65 +1385,6 @@ class HomeFragment : Fragment() {
 
     private fun Int.dpToPx(): Int {
         return (this * resources.displayMetrics.density).toInt()
-    }
-
-    inner class DateDividerItemDecoration(context: android.content.Context) : RecyclerView.ItemDecoration() {
-        private val paint = android.graphics.Paint().apply {
-            color = androidx.core.content.ContextCompat.getColor(context, R.color.calendar_border)
-            strokeWidth = 1.dpToPx().toFloat()
-        }
-
-        override fun getItemOffsets(
-            outRect: android.graphics.Rect,
-            view: View,
-            parent: RecyclerView,
-            state: RecyclerView.State
-        ) {
-            val position = parent.getChildAdapterPosition(view)
-            val adapter = parent.adapter as? ShiftAdapter ?: return
-            
-            if (position < adapter.shifts.size - 1) {
-                val currentShift = adapter.shifts[position]
-                val nextShift = adapter.shifts[position + 1]
-                
-                if (!isSameDay(currentShift.startDateTime, nextShift.startDateTime)) {
-                    outRect.bottom = 28.dpToPx()
-                }
-            }
-        }
-
-        override fun onDraw(c: android.graphics.Canvas, parent: RecyclerView, state: RecyclerView.State) {
-            val adapter = parent.adapter as? ShiftAdapter ?: return
-            val left = parent.paddingLeft
-            val right = parent.width - parent.paddingRight
-
-            for (i in 0 until parent.childCount) {
-                val child = parent.getChildAt(i)
-                val position = parent.getChildAdapterPosition(child)
-                
-                if (position != RecyclerView.NO_POSITION && position < adapter.shifts.size - 1) {
-                    val currentShift = adapter.shifts[position]
-                    val nextShift = adapter.shifts[position + 1]
-
-                    if (!isSameDay(currentShift.startDateTime, nextShift.startDateTime)) {
-                        val params = child.layoutParams as RecyclerView.LayoutParams
-                        val top = child.bottom + params.bottomMargin + 8.dpToPx()
-                        c.drawLine(left.toFloat(), top.toFloat(), right.toFloat(), top.toFloat(), paint)
-                    }
-                }
-            }
-        }
-
-        private fun isSameDay(dateStr1: String?, dateStr2: String?): Boolean {
-            if (dateStr1 == null || dateStr2 == null) return false
-            return try {
-                val d1 = LocalDate.parse(dateStr1.substring(0, 10))
-                val d2 = LocalDate.parse(dateStr2.substring(0, 10))
-                d1 == d2
-            } catch (e: Exception) {
-                false
-            }
-        }
     }
 
     private fun checkForUpdates() {

@@ -125,14 +125,15 @@ object ChartRenderer {
         listener: ScheduleInteractionListener? = null,
         fitToWidth: Boolean = false,
         focusTime: LocalDateTime? = null,
-        focusEndTime: LocalDateTime? = null
-    ): Pair<Int?, Int?> {
+        focusEndTime: LocalDateTime? = null,
+        focusShiftId: String? = null
+    ): Triple<Int?, Int?, Int?> {
         chartContainer.removeAllViews()
-        if (day.shifts.isEmpty()) return Pair(null, null)
+        if (day.shifts.isEmpty()) return Triple(null, null, null)
 
+        // ... (sorting and time range calculation same as before) ...
         val sortedShifts = day.shifts.sortedBy { it.shift.startDateTime }
         
-        // Determine Time Range
         val firstShiftStart = fixedStartTime ?: LocalDateTime.parse(sortedShifts.first().shift.startDateTime)
         val lastShiftEnd = fixedEndTime ?: day.shifts.maxOf { LocalDateTime.parse(it.shift.endDateTime) }.truncatedTo(ChronoUnit.MINUTES)
 
@@ -157,13 +158,7 @@ object ChartRenderer {
             dpToPx(context, hourWidthDp) / 60f
         }
         
-        // Fix: Set explicit width to prevent scroll jumping
         val contentWidth = (totalMinutes * pixelsPerMinute).toInt() + 2 * paddingPx
-        if (chartContainer.layoutParams == null) {
-             chartContainer.layoutParams = android.view.ViewGroup.LayoutParams(contentWidth, android.view.ViewGroup.LayoutParams.WRAP_CONTENT)
-        } else {
-             chartContainer.layoutParams.width = contentWidth
-        }
 
         val grouped = day.shifts.groupBy { 
             getWorkstationDisplayName(it.shift.workstationId ?: it.shift.workstationCode, it.shift.workstationName) 
@@ -179,6 +174,13 @@ object ChartRenderer {
             contentHeight += dpToPx(context, (lanes.size * (barHeightDp + laneSpacingDp)) + laneSpacingDp)
         }
         contentHeight += dpToPx(context, 16)
+
+        if (chartContainer.layoutParams == null) {
+             chartContainer.layoutParams = android.view.ViewGroup.LayoutParams(contentWidth, contentHeight)
+        } else {
+             chartContainer.layoutParams.width = contentWidth
+             chartContainer.layoutParams.height = contentHeight
+        }
 
         // Draw Time Markers
         var currentHour = chartStartTime
@@ -200,7 +202,6 @@ object ChartRenderer {
                 }
             }
             
-            // Measure to center
             timeLabel.measure(0, 0)
             val labelWidth = timeLabel.measuredWidth
             (timeLabel.layoutParams as RelativeLayout.LayoutParams).leftMargin = xPos - (labelWidth / 2)
@@ -221,6 +222,7 @@ object ChartRenderer {
         }
 
         var currentY = dpToPx(context, timeHeaderHeightDp)
+        var focusY: Int? = null
 
         sortedGroups.forEach { (_, shifts) ->
             val lanes = calculateLanes(shifts)
@@ -230,7 +232,6 @@ object ChartRenderer {
                     val sStart = LocalDateTime.parse(s.shift.startDateTime)
                     val sEnd = LocalDateTime.parse(s.shift.endDateTime)
                     
-                    // Clamp to chart range
                     val effectiveStart = if (sStart.isBefore(chartStartTime)) chartStartTime else sStart
                     val effectiveEnd = if (sEnd.isAfter(chartEndTime)) chartEndTime else sEnd
                     
@@ -252,7 +253,10 @@ object ChartRenderer {
                             ellipsize = android.text.TextUtils.TruncateAt.END
                             setPadding(dpToPx(context, 4), 0, dpToPx(context, 4), 0)
                             
+                            val isFocus = focusShiftId != null && s.shift.shiftId.toString() == focusShiftId
+                            
                             val bgColor = when {
+                                isFocus -> ContextCompat.getColor(context, R.color.work_day_green) // Force green for focus
                                 s.isAvailable -> ContextCompat.getColor(context, R.color.purple_500)
                                 s.isMe -> ContextCompat.getColor(context, R.color.work_day_green)
                                 else -> 0xFF00695C.toInt()
@@ -271,6 +275,10 @@ object ChartRenderer {
                             }
                         }
                         chartContainer.addView(barView)
+                        
+                        if (focusShiftId != null && s.shift.shiftId.toString() == focusShiftId) {
+                            focusY = currentY
+                        }
                     }
                 }
                 currentY += dpToPx(context, barHeightDp + laneSpacingDp)
@@ -312,7 +320,7 @@ object ChartRenderer {
              }
         }
         
-        return Pair(nowX, focusX)
+        return Triple(nowX, focusX, focusY)
     }
 
     private fun calculateLanes(shifts: List<EnrichedShift>): List<List<EnrichedShift>> {
@@ -371,22 +379,15 @@ fun getWorkstationDisplayName(workstationId: String?, fallbackName: String?): St
         "MANAGERADMIN_1" to "Manager",
         "MANAGERADMIN" to "Manager",
         "PEOPLEMANAGEMENT_1" to "Manager",
-        "PEOPLEMANAGEMENT" to "Manager"
+        "PEOPLEMANAGEMENT" to "Manager",
+        "LABOR_MANAGEMENT" to "Manager",
+        "LABORMANAGEMENT" to "Manager",
+        "Labor Management" to "Manager"
     )
-    if (workstationId != null) {
-        val mapped = customNames[workstationId]
-        if (mapped != null) return mapped
+        if (workstationId != null) {
+            val mapped = customNames[workstationId]
+            if (mapped != null) return mapped
+        }
+        return fallbackName ?: workstationId ?: "Unknown"
     }
-    return fallbackName ?: workstationId ?: "Unknown"
-}
-
-class DateDividerItemDecoration(context: android.content.Context) : RecyclerView.ItemDecoration() {
-    override fun getItemOffsets(
-        outRect: android.graphics.Rect,
-        view: View,
-        parent: RecyclerView,
-        state: RecyclerView.State
-    ) {
-        outRect.bottom = (16 * view.resources.displayMetrics.density).toInt()
-    }
-}
+    

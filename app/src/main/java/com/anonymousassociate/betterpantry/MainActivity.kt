@@ -68,39 +68,24 @@ class MainActivity : AppCompatActivity() {
                 android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
         
-        // Ensure system bars match background
+        // Enable edge-to-edge
+        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+        
+        // Ensure system bars match background (Status bar transparent for edge-to-edge)
         val background = ContextCompat.getColor(this, R.color.background_color)
-        window.statusBarColor = background
+        window.statusBarColor = android.graphics.Color.TRANSPARENT
         window.navigationBarColor = background
 
         askNotificationPermission()
 
-        // Handle Window Insets for Symmetrical Centering & Full-Width Navbar
-        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, insets ->
-            val displayCutout = insets.displayCutout
-            
-            val leftInset = displayCutout?.safeInsetLeft ?: insets.systemWindowInsetLeft
-            val rightInset = displayCutout?.safeInsetRight ?: insets.systemWindowInsetRight
-            
-            // Calculate max inset to enforce symmetry
-            val maxHorizontalInset = max(leftInset, rightInset)
-            
-            // Apply symmetric padding to content container only
-            binding.fragmentContainer.setPadding(
-                maxHorizontalInset, 
-                binding.fragmentContainer.paddingTop, 
-                maxHorizontalInset, 
-                binding.fragmentContainer.paddingBottom
-            )
-            
-            // Pad the BottomNav CONTENT (icons), but the background (navBackground view) remains full width
-            binding.bottomNavigation.setPadding(
-                maxHorizontalInset,
-                binding.bottomNavigation.paddingTop,
-                maxHorizontalInset,
-                binding.bottomNavigation.paddingBottom
-            )
-            
+        // Handle Status Bar Height
+        ViewCompat.setOnApplyWindowInsetsListener(binding.statusBarBackground) { view, insets ->
+            val statusBars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.statusBars())
+            val params = view.layoutParams
+            if (params.height != statusBars.top) {
+                params.height = statusBars.top
+                view.layoutParams = params
+            }
             insets
         }
 
@@ -114,6 +99,10 @@ class MainActivity : AppCompatActivity() {
             } else if (current is com.anonymousassociate.betterpantry.ui.ScheduleFragment) {
                 if (binding.bottomNavigation.selectedItemId != R.id.nav_schedule) {
                     binding.bottomNavigation.menu.findItem(R.id.nav_schedule).isChecked = true
+                }
+            } else if (current is com.anonymousassociate.betterpantry.ui.PeopleFragment) {
+                if (binding.bottomNavigation.selectedItemId != R.id.nav_people) {
+                    binding.bottomNavigation.menu.findItem(R.id.nav_people).isChecked = true
                 }
             } else if (current is NotificationsFragment) {
                 if (binding.bottomNavigation.selectedItemId != R.id.nav_notifications) {
@@ -345,6 +334,7 @@ class MainActivity : AppCompatActivity() {
         
         binding.bottomNavigation.visibility = View.GONE
         binding.navShadow.visibility = View.GONE
+        binding.statusBarBackground.visibility = View.GONE
         binding.authRetryContainer.visibility = View.GONE // We use Dialog now
         
         if (lockDialog == null) {
@@ -376,6 +366,7 @@ class MainActivity : AppCompatActivity() {
 
         binding.bottomNavigation.visibility = View.GONE
         binding.navShadow.visibility = View.GONE
+        binding.statusBarBackground.visibility = View.GONE
         binding.fragmentContainer.visibility = View.GONE
         binding.authRetryContainer.visibility = View.GONE
         binding.loginWebView.visibility = View.VISIBLE
@@ -408,6 +399,7 @@ class MainActivity : AppCompatActivity() {
         binding.fragmentContainer.visibility = View.VISIBLE
         binding.bottomNavigation.visibility = View.VISIBLE
         binding.navShadow.visibility = View.VISIBLE
+        binding.statusBarBackground.visibility = View.VISIBLE
 
         setupBottomNavigation()
         setupBackgroundWork()
@@ -444,11 +436,36 @@ class MainActivity : AppCompatActivity() {
                     if (currentFragment !is com.anonymousassociate.betterpantry.ui.ScheduleFragment) loadFragment(com.anonymousassociate.betterpantry.ui.ScheduleFragment())
                     true
                 }
+                R.id.nav_people -> {
+                    if (currentFragment !is com.anonymousassociate.betterpantry.ui.PeopleFragment) loadFragment(com.anonymousassociate.betterpantry.ui.PeopleFragment())
+                    true
+                }
                 R.id.nav_notifications -> {
                     if (currentFragment !is NotificationsFragment) loadFragment(NotificationsFragment())
                     true
                 }
                 else -> false
+            }
+        }
+
+        // Disable tooltips and long-click vibration
+        val menu = binding.bottomNavigation.menu
+        val bottomNav = binding.bottomNavigation
+        for (i in 0 until menu.size()) {
+            val item = menu.getItem(i)
+            // Clear tooltip on MenuItem
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                item.tooltipText = null
+            }
+            // Find the view to disable long click and haptic feedback
+            bottomNav.findViewById<View>(item.itemId)?.apply {
+                isHapticFeedbackEnabled = false
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    tooltipText = "" // Clear tooltip on View
+                }
+                setOnLongClickListener { 
+                    true // Consume event to prevent system tooltip
+                }
             }
         }
     }

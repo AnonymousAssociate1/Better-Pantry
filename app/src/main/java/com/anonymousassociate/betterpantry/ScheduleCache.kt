@@ -79,6 +79,20 @@ class ScheduleCache(context: Context) {
         }
     }
 
+    fun getFavorites(): Set<String> {
+        return prefs.getStringSet("favorites", emptySet()) ?: emptySet()
+    }
+
+    fun toggleFavorite(employeeId: String) {
+        val current = getFavorites().toMutableSet()
+        if (current.contains(employeeId)) {
+            current.remove(employeeId)
+        } else {
+            current.add(employeeId)
+        }
+        prefs.edit().putStringSet("favorites", current).apply()
+    }
+
     fun clear() {
         prefs.edit().clear().apply()
     }

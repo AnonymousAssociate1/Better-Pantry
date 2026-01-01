@@ -38,14 +38,12 @@
                 app:tint="@color/text_primary" />
         </RelativeLayout>
 
-        <ScrollView
+        <androidx.core.widget.NestedScrollView
             android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:maxHeight="500dp"
+            android:layout_height="wrap_content"
             android:clipChildren="false"
             android:clipToPadding="false"
-            android:scrollbars="none"
+            android:scrollbars="vertical"
             android:paddingTop="8dp">
 
             <LinearLayout
@@ -56,7 +54,7 @@
                 android:clipChildren="false"
                 android:clipToPadding="false" />
 
-        </ScrollView>
+        </androidx.core.widget.NestedScrollView>
 
     <LinearLayout
         android:id="@+id/buttonContainer"

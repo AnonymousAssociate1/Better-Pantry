@@ -14,5 +14,8 @@
 
     <!-- Calendar colors -->
     <color name="work_day_green">#6B8E6F</color>
+    <color name="work_day_green_container">#D8E6D9</color>
+    <color name="work_day_green_ripple">#336B8E6F</color>
     <color name="available_shift_dot">#90C695</color>
+    <color name="nav_text_secondary">#757575</color>
 </resources>

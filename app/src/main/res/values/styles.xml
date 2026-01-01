@@ -7,4 +7,18 @@
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">match_parent</item>
     </style>
+
+    <style name="CustomBottomNavigation" parent="Widget.Material3.BottomNavigationView">
+        <item name="labelVisibilityMode">labeled</item>
+        <item name="itemActiveIndicatorStyle">@style/CustomActiveIndicator</item>
+        <item name="itemRippleColor">@color/nav_item_ripple</item>
+        <item name="itemIconTint">@color/nav_icon_tint</item>
+        <item name="itemTextColor">@color/nav_text_color</item>
+        <item name="itemTextAppearanceActive">@style/TextAppearance.Material3.LabelSmall</item>
+        <item name="itemTextAppearanceInactive">@style/TextAppearance.Material3.LabelSmall</item>
+    </style>
+
+    <style name="CustomActiveIndicator" parent="Widget.Material3.BottomNavigationView.ActiveIndicator">
+        <item name="android:color">@color/work_day_green_container</item>
+    </style>
 </resources>

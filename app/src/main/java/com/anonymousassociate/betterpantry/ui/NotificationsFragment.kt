@@ -100,6 +100,19 @@ class NotificationsFragment : Fragment() {
         emptyStateText = view.findViewById(R.id.emptyStateText)
         permissionButton = view.findViewById(R.id.permissionButton)
         val settingsButton: android.widget.ImageButton = view.findViewById(R.id.settingsButton)
+        
+        val rootContainer = view.findViewById<View>(R.id.rootContainer)
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(rootContainer) { v, insets ->
+            val bars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            v.setPadding(v.paddingLeft, bars.top, v.paddingRight, v.paddingBottom)
+            
+            // Adjust refresh indicator position
+            val refreshStart = -(40 * resources.displayMetrics.density).toInt()
+            val refreshTarget = (64 * resources.displayMetrics.density).toInt()
+            swipeRefreshLayout.setProgressViewOffset(false, refreshStart, refreshTarget)
+            
+            insets
+        }
 
         settingsButton.setOnClickListener { showSettingsMenu(it) }
 
@@ -1140,7 +1153,11 @@ class NotificationsFragment : Fragment() {
             "QC_1" to "QC 1",
             "QC_2" to "QC 2",
             "DTORDERTAKER" to "DriveThru",
-            "1ST_DR" to "Dining Room"
+            "PEOPLEMANAGEMENT_1" to "Manager",
+            "PEOPLEMANAGEMENT" to "Manager",
+            "LABOR_MANAGEMENT" to "Manager",
+            "LABORMANAGEMENT" to "Manager",
+            "Labor Management" to "Manager"
         )
         var name = customNames[workstationId]
         if (name == null && fallbackName != null) {
@@ -1254,71 +1271,44 @@ class NotificationsFragment : Fragment() {
     }
 
             private fun loadNotifications() {
+                swipeRefreshLayout.post {
+                    swipeRefreshLayout.isRefreshing = true
+                }
 
                 // Trigger the global check for new notifications which will send a push
-
-                NotificationWorker.checkAndSendNewNotifications(requireContext())
-
-        
-
-                swipeRefreshLayout.isRefreshing = true
-
-                
-
-                // The rest of the method continues to update the local UI from cache/network
-
-                // ... (existing load logic)
+                lifecycleScope.launch(Dispatchers.IO) {
+                    try {
+                        NotificationWorker.checkAndSendNewNotifications(requireContext())
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
 
                 // Load cache first
-
                 val cached = scheduleCache.getCachedNotifications()
-
                 if (cached != null && cached.isNotEmpty()) {
-
                     allNotifications = cached
-
                     hasLoaded = true
-
                     updateList()
-
                 }
-
-        
 
                 lifecycleScope.launch {
-
                     try {
-
                         val response = apiService.getNotifications(size = 100)
-
                         val fetched = response?.content ?: emptyList()
-
                         allNotifications = fetched.sortedByDescending { it.createDateTime }
-
                         scheduleCache.saveNotifications(allNotifications)
-
                         hasLoaded = true
-
                         updateList()
 
-        
-
                         val count = allNotifications.count { it.read == false }
-
                         (requireActivity() as? MainActivity)?.updateNotificationBadge(count)
-
                     } catch (e: Exception) {
-
                         e.printStackTrace()
-
                     } finally {
-
                         swipeRefreshLayout.isRefreshing = false
-
                     }
-
                 }
-
             }
 
     private fun mergeData(
