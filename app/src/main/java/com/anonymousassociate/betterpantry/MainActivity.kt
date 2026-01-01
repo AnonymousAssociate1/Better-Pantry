@@ -68,24 +68,39 @@ class MainActivity : AppCompatActivity() {
                 android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
         
-        // Enable edge-to-edge
-        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
-        
-        // Ensure system bars match background (Status bar transparent for edge-to-edge)
+        // Ensure system bars match background
         val background = ContextCompat.getColor(this, R.color.background_color)
-        window.statusBarColor = android.graphics.Color.TRANSPARENT
+        window.statusBarColor = background
         window.navigationBarColor = background
 
         askNotificationPermission()
 
-        // Handle Status Bar Height
-        ViewCompat.setOnApplyWindowInsetsListener(binding.statusBarBackground) { view, insets ->
-            val statusBars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.statusBars())
-            val params = view.layoutParams
-            if (params.height != statusBars.top) {
-                params.height = statusBars.top
-                view.layoutParams = params
-            }
+        // Handle Window Insets for Symmetrical Centering & Full-Width Navbar
+        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, insets ->
+            val displayCutout = insets.displayCutout
+            
+            val leftInset = displayCutout?.safeInsetLeft ?: insets.systemWindowInsetLeft
+            val rightInset = displayCutout?.safeInsetRight ?: insets.systemWindowInsetRight
+            
+            // Calculate max inset to enforce symmetry
+            val maxHorizontalInset = max(leftInset, rightInset)
+            
+            // Apply symmetric padding to content container only
+            binding.fragmentContainer.setPadding(
+                maxHorizontalInset, 
+                binding.fragmentContainer.paddingTop, 
+                maxHorizontalInset, 
+                binding.fragmentContainer.paddingBottom
+            )
+            
+            // Pad the BottomNav CONTENT (icons), but the background (navBackground view) remains full width
+            binding.bottomNavigation.setPadding(
+                maxHorizontalInset,
+                binding.bottomNavigation.paddingTop,
+                maxHorizontalInset,
+                binding.bottomNavigation.paddingBottom
+            )
+            
             insets
         }
 
@@ -334,7 +349,6 @@ class MainActivity : AppCompatActivity() {
         
         binding.bottomNavigation.visibility = View.GONE
         binding.navShadow.visibility = View.GONE
-        binding.statusBarBackground.visibility = View.GONE
         binding.authRetryContainer.visibility = View.GONE // We use Dialog now
         
         if (lockDialog == null) {
@@ -366,7 +380,6 @@ class MainActivity : AppCompatActivity() {
 
         binding.bottomNavigation.visibility = View.GONE
         binding.navShadow.visibility = View.GONE
-        binding.statusBarBackground.visibility = View.GONE
         binding.fragmentContainer.visibility = View.GONE
         binding.authRetryContainer.visibility = View.GONE
         binding.loginWebView.visibility = View.VISIBLE
@@ -399,7 +412,6 @@ class MainActivity : AppCompatActivity() {
         binding.fragmentContainer.visibility = View.VISIBLE
         binding.bottomNavigation.visibility = View.VISIBLE
         binding.navShadow.visibility = View.VISIBLE
-        binding.statusBarBackground.visibility = View.VISIBLE
 
         setupBottomNavigation()
         setupBackgroundWork()
