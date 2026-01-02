@@ -22,10 +22,8 @@ import com.anonymousassociate.betterpantry.models.Associate
 import com.anonymousassociate.betterpantry.models.TeamMember
 import com.anonymousassociate.betterpantry.ui.adapters.PeopleAdapter
 import com.google.gson.Gson
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.repeatOnLifecycle
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
@@ -250,21 +248,27 @@ class PeopleFragment : Fragment() {
     }
 
     private fun loadPeople(forceRefresh: Boolean = false) {
+        // Always try to load from cache first to show something immediately
+        val cachedTeam = scheduleCache.getTeamSchedule()
+        if (cachedTeam != null) {
+            processTeamMembers(cachedTeam)
+        }
+
         if (!forceRefresh) {
             val lastUpdate = scheduleCache.getLastUpdateTime()
             val fiveMinutesAgo = System.currentTimeMillis() - (5 * 60 * 1000)
-            if (lastUpdate > fiveMinutesAgo) {
-                // Just load from cache if available, don't refresh from network
-                val cachedTeam = scheduleCache.getTeamSchedule()
-                if (cachedTeam != null && cachedTeam.isNotEmpty()) {
-                    processTeamMembers(cachedTeam)
-                    swipeRefreshLayout.isRefreshing = false
-                    return
-                }
+            if (lastUpdate > fiveMinutesAgo && cachedTeam != null && cachedTeam.isNotEmpty()) {
+                // Cache is fresh enough, don't refresh from network
+                swipeRefreshLayout.isRefreshing = false
+                return
             }
         }
 
-        swipeRefreshLayout.isRefreshing = true
+        // Use post to ensure the spinner actually shows up if the view is just being created
+        swipeRefreshLayout.post {
+            swipeRefreshLayout.isRefreshing = true
+        }
+        
         lifecycleScope.launch {
             try {
                 fetchTeamMembers()
