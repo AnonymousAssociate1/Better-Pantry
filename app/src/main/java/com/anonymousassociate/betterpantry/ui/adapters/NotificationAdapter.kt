@@ -61,6 +61,8 @@ class NotificationAdapter(
             "1ST_CASHIER_1" to "Cashier 1",
             "SANDWICH_2" to "Sandwich 2",
             "SANDWICH_1" to "Sandwich 1",
+            "SALAD_1" to "Salad 1",
+            "SALAD_2" to "Salad 2",
             "DTORDERTAKER_1" to "DriveThru",
             "1ST_DR_1" to "Dining Room",
             "1st_Cashier" to "Cashier 1",
@@ -77,6 +79,12 @@ class NotificationAdapter(
             "1ST_CASHIER" to "Cashier 1",
             "QC_1" to "QC 1",
             "QC_2" to "QC 2",
+            "DTORDERTAKER" to "DriveThru",
+            "1ST_DR" to "Dining Room",
+            "MANAGER_1" to "Manager",
+            "MANAGER" to "Manager",
+            "MANAGERADMIN_1" to "Manager",
+            "MANAGERADMIN" to "Manager",
             "PEOPLEMANAGEMENT_1" to "Manager",
             "PEOPLEMANAGEMENT" to "Manager",
             "LABOR_MANAGEMENT" to "Manager",
@@ -143,6 +151,14 @@ class NotificationAdapter(
                             val endStr = initiatorShift?.optString("endDateTime")
                             
                             var workstationName = "Shift"
+                            
+                            // Try to get from JSON first
+                            val jsonName = initiatorShift?.optString("workstationName")
+                            val jsonId = initiatorShift?.optString("workstationId") ?: initiatorShift?.optString("workstationCode")
+                            if (!jsonName.isNullOrEmpty()) {
+                                workstationName = getWorkstationDisplayName(jsonId, jsonName)
+                            }
+                            
                             val shiftId = initiatorShift?.optString("shiftId") ?: initiatorShift?.optLong("shiftId")?.toString()
                             if (shiftId != null) {
                                 val trackItem = scheduleData?.track?.find { it.primaryShiftRequest?.shift?.shiftId == shiftId }
@@ -152,7 +168,7 @@ class NotificationAdapter(
                                 }
                             }
 
-                            if (startStr != null && endStr != null) {
+                            if (!startStr.isNullOrEmpty() && !endStr.isNullOrEmpty()) {
                                 val sTime = LocalDateTime.parse(startStr).format(DateTimeFormatter.ofPattern("h:mma", Locale.US))
                                 val eTime = LocalDateTime.parse(endStr).format(DateTimeFormatter.ofPattern("h:mma", Locale.US))
                                 val date = LocalDateTime.parse(startStr).format(DateTimeFormatter.ofPattern("M/d", Locale.US))
@@ -165,6 +181,14 @@ class NotificationAdapter(
                             val endStr = initiatorShift?.optString("endDateTime")
                             
                             var workstationName = "Shift"
+                            
+                            // Try to get from JSON first
+                            val jsonName = initiatorShift?.optString("workstationName")
+                            val jsonId = initiatorShift?.optString("workstationId") ?: initiatorShift?.optString("workstationCode")
+                            if (!jsonName.isNullOrEmpty()) {
+                                workstationName = getWorkstationDisplayName(jsonId, jsonName)
+                            }
+
                             val shiftId = initiatorShift?.optString("shiftId") ?: initiatorShift?.optLong("shiftId")?.toString()
                             if (shiftId != null) {
                                 val trackItem = scheduleData?.track?.find { it.primaryShiftRequest?.shift?.shiftId == shiftId }
@@ -174,7 +198,7 @@ class NotificationAdapter(
                                 }
                             }
                             
-                            if (startStr != null && endStr != null) {
+                            if (!startStr.isNullOrEmpty() && !endStr.isNullOrEmpty()) {
                                 val sTime = LocalDateTime.parse(startStr).format(DateTimeFormatter.ofPattern("h:mma", Locale.US))
                                 val eTime = LocalDateTime.parse(endStr).format(DateTimeFormatter.ofPattern("h:mma", Locale.US))
                                 val date = LocalDateTime.parse(startStr).format(DateTimeFormatter.ofPattern("M/d", Locale.US))
@@ -192,6 +216,14 @@ class NotificationAdapter(
                             val endStr = initiatorShift?.optString("endDateTime")
                             
                             var workstationName = "Shift"
+                            
+                            // Try to get from JSON first
+                            val jsonName = initiatorShift?.optString("workstationName")
+                            val jsonId = initiatorShift?.optString("workstationId") ?: initiatorShift?.optString("workstationCode")
+                            if (!jsonName.isNullOrEmpty()) {
+                                workstationName = getWorkstationDisplayName(jsonId, jsonName)
+                            }
+
                             val shiftId = initiatorShift?.optString("shiftId") ?: initiatorShift?.optLong("shiftId")?.toString()
                             if (shiftId != null) {
                                 val trackItem = scheduleData?.track?.find { it.primaryShiftRequest?.shift?.shiftId == shiftId }
@@ -201,7 +233,7 @@ class NotificationAdapter(
                                 }
                             }
                             
-                            if (startStr != null && endStr != null) {
+                            if (!startStr.isNullOrEmpty() && !endStr.isNullOrEmpty()) {
                                 val sTime = LocalDateTime.parse(startStr).format(DateTimeFormatter.ofPattern("h:mma", Locale.US))
                                 val eTime = LocalDateTime.parse(endStr).format(DateTimeFormatter.ofPattern("h:mma", Locale.US))
                                 val date = LocalDateTime.parse(startStr).format(DateTimeFormatter.ofPattern("M/d", Locale.US))
