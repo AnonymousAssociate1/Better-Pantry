@@ -1,3 +1,15 @@
 <resources>
     <string name="app_name">Better Pantry</string>
+    <string name="release_notes">
+**Features**\n
+**•** Notifications Settings\n
+**•** Paycheck Reminder option\n
+**•** This sick \'what\'s new\' thing\n
+\n
+**Fixes**\n
+**•** Better caching on people page\n
+**•** Correct shift names in notification tiles\n
+**•** Correct shift names on people tab in available shifts\n
+**•** Removed a scroll bar\n
+    </string>
 </resources>

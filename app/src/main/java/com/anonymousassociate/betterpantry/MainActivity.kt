@@ -37,6 +37,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var authManager: AuthManager
+    private lateinit var apiService: PantryApiService
     private var isAuthenticating = false
     private var isAuthenticated = false
     private var hasShownBiometricThisSession = false
@@ -61,6 +62,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         authManager = AuthManager(this)
+        apiService = PantryApiService(authManager)
 
         // Fix for purple/black bars in cutout/notch area
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
@@ -437,6 +439,79 @@ class MainActivity : AppCompatActivity() {
                 loadFragment(HomeFragment())
             }
         }
+        
+        checkAndShowWhatsNew()
+    }
+
+    private fun checkAndShowWhatsNew() {
+        val prefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
+        val currentVersion = BuildConfig.VERSION_CODE
+        val lastVersion = prefs.getInt("last_version_code", -1)
+
+        if (lastVersion == -1) {
+            // Fresh install: save current version so we don't show dialog
+            prefs.edit().putInt("last_version_code", currentVersion).apply()
+            return
+        }
+
+        if (currentVersion > lastVersion) {
+            val releaseNotes = getString(R.string.release_notes)
+            if (releaseNotes.isNotEmpty()) {
+                showWhatsNewDialog(releaseNotes, currentVersion, prefs)
+            }
+        }
+    }
+
+    private fun showWhatsNewDialog(body: String, currentVersion: Int, prefs: android.content.SharedPreferences) {
+        if (isFinishing || isDestroyed) return
+
+        val dialog = Dialog(this)
+        dialog.setContentView(R.layout.dialog_whats_new)
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        
+        // Set width to 90% of screen
+        val displayMetrics = resources.displayMetrics
+        val width = (displayMetrics.widthPixels * 0.9).toInt()
+        dialog.window?.setLayout(width, ViewGroup.LayoutParams.WRAP_CONTENT)
+
+        val titleText = dialog.findViewById<android.widget.TextView>(R.id.titleText)
+        val notesText = dialog.findViewById<android.widget.TextView>(R.id.releaseNotesText)
+        val gotItButton = dialog.findViewById<android.widget.Button>(R.id.gotItButton)
+        
+        // Set dynamic title
+        titleText.text = "What's new in Better Pantry ${BuildConfig.VERSION_NAME}"
+
+        // Simple Markdown-ish formatting to HTML
+        // Replace Headers
+        var formattedText = body
+            .replace(Regex("### (.*)"), "<b>$1</b><br/>")
+            .replace(Regex("## (.*)"), "<b>$1</b><br/>")
+            // Bold **text** -> <b>text</b>
+            .replace(Regex("\\*\\*(.*?)\\*\\*"), "<b>$1</b>")
+            // List items * or -
+            .replace(Regex("^\\* ", RegexOption.MULTILINE), "• ")
+            .replace(Regex("^- ", RegexOption.MULTILINE), "• ")
+            // Newlines
+            .replace("\r\n", "<br/>")
+            .replace("\n", "<br/>")
+
+        notesText.text = android.text.Html.fromHtml(formattedText, android.text.Html.FROM_HTML_MODE_COMPACT)
+
+        // Save version on dismiss/click
+        val saveVersion = {
+            prefs.edit().putInt("last_version_code", currentVersion).apply()
+        }
+
+        gotItButton.setOnClickListener {
+            saveVersion()
+            dialog.dismiss()
+        }
+
+        dialog.setOnDismissListener {
+            saveVersion()
+        }
+        
+        dialog.show()
     }
 
     private fun setupBottomNavigation() {
