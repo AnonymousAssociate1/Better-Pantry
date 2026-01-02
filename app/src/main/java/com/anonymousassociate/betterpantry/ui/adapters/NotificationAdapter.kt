@@ -154,9 +154,15 @@ class NotificationAdapter(
                             
                             // Try to get from JSON first
                             val jsonName = initiatorShift?.optString("workstationName")
-                            val jsonId = initiatorShift?.optString("workstationId") ?: initiatorShift?.optString("workstationCode")
+                            val rawId = initiatorShift?.optString("workstationId")
+                            val rawCode = initiatorShift?.optString("workstationCode")
+                            
+                            val lookupKey = if (!rawId.isNullOrEmpty()) rawId 
+                                            else if (!rawCode.isNullOrEmpty()) rawCode 
+                                            else jsonName
+
                             if (!jsonName.isNullOrEmpty()) {
-                                workstationName = getWorkstationDisplayName(jsonId, jsonName)
+                                workstationName = getWorkstationDisplayName(lookupKey, jsonName)
                             }
                             
                             val shiftId = initiatorShift?.optString("shiftId") ?: initiatorShift?.optLong("shiftId")?.toString()
@@ -184,9 +190,15 @@ class NotificationAdapter(
                             
                             // Try to get from JSON first
                             val jsonName = initiatorShift?.optString("workstationName")
-                            val jsonId = initiatorShift?.optString("workstationId") ?: initiatorShift?.optString("workstationCode")
+                            val rawId = initiatorShift?.optString("workstationId")
+                            val rawCode = initiatorShift?.optString("workstationCode")
+                            
+                            val lookupKey = if (!rawId.isNullOrEmpty()) rawId 
+                                            else if (!rawCode.isNullOrEmpty()) rawCode 
+                                            else jsonName
+
                             if (!jsonName.isNullOrEmpty()) {
-                                workstationName = getWorkstationDisplayName(jsonId, jsonName)
+                                workstationName = getWorkstationDisplayName(lookupKey, jsonName)
                             }
 
                             val shiftId = initiatorShift?.optString("shiftId") ?: initiatorShift?.optLong("shiftId")?.toString()
@@ -219,9 +231,15 @@ class NotificationAdapter(
                             
                             // Try to get from JSON first
                             val jsonName = initiatorShift?.optString("workstationName")
-                            val jsonId = initiatorShift?.optString("workstationId") ?: initiatorShift?.optString("workstationCode")
+                            val rawId = initiatorShift?.optString("workstationId")
+                            val rawCode = initiatorShift?.optString("workstationCode")
+                            
+                            val lookupKey = if (!rawId.isNullOrEmpty()) rawId 
+                                            else if (!rawCode.isNullOrEmpty()) rawCode 
+                                            else jsonName
+
                             if (!jsonName.isNullOrEmpty()) {
-                                workstationName = getWorkstationDisplayName(jsonId, jsonName)
+                                workstationName = getWorkstationDisplayName(lookupKey, jsonName)
                             }
 
                             val shiftId = initiatorShift?.optString("shiftId") ?: initiatorShift?.optLong("shiftId")?.toString()
