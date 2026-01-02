@@ -34,11 +34,22 @@ class ShiftAdapter(
         "1ST_SANDWICH_1" to "Sandwich 1",
         "Bake" to "Baker",
         "BAKER" to "Baker",
+        "SALAD" to "Salad 1",
+        "SANDWICH" to "Sandwich 1",
         "1ST_CASHIER" to "Cashier 1",
         "QC_1" to "QC 1",
         "QC_2" to "QC 2",
         "DTORDERTAKER" to "DriveThru",
-        "1ST_DR" to "Dining Room"
+        "1ST_DR" to "Dining Room",
+        "MANAGER_1" to "Manager",
+        "MANAGER" to "Manager",
+        "MANAGERADMIN_1" to "Manager",
+        "MANAGERADMIN" to "Manager",
+        "PEOPLEMANAGEMENT_1" to "Manager",
+        "PEOPLEMANAGEMENT" to "Manager",
+        "LABOR_MANAGEMENT" to "Manager",
+        "LABORMANAGEMENT" to "Manager",
+        "Labor Management" to "Manager"
     )
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ShiftViewHolder {
@@ -87,22 +98,28 @@ class ShiftAdapter(
                     shiftLocationText.text = subtitleProvider.invoke(shift)
                 } else {
                     // Fallback to default logic
-                    // Map workstation ID to custom name
-                    val workstationId = shift.workstationId ?: shift.workstationCode ?: ""
-                    var workstationName = customNames[workstationId]
-                    
-                    // If not found by ID, try finding by name (as key)
-                    if (workstationName == null) {
-                         workstationName = customNames[shift.workstationName]
+                    val workstationId = shift.workstationId
+                    val workstationCode = shift.workstationCode
+                    val fallbackName = shift.workstationName
+
+                    var finalName: String? = null
+
+                    if (workstationId != null) {
+                        finalName = customNames[workstationId]
                     }
-                    
-                    // If still null, use the raw name
-                    if (workstationName == null) {
-                        workstationName = shift.workstationName
+                    if (finalName == null && workstationCode != null) {
+                        finalName = customNames[workstationCode]
+                    }
+                    if (finalName == null && fallbackName != null) {
+                        finalName = customNames[fallbackName]
+                    }
+
+                    if (finalName == null) {
+                        finalName = fallbackName
                     }
 
                     // Show workstation name - Duration
-                    val name = if (!workstationName.isNullOrEmpty()) workstationName else "Shift"
+                    val name = if (!finalName.isNullOrEmpty()) finalName else "Shift"
                     
                     val duration = java.time.Duration.between(startDateTime, endDateTime)
                     val hrs = duration.toHours()

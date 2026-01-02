@@ -376,7 +376,7 @@ class PeerScheduleFragment : Fragment() {
             shiftDateTime.text = "${LocalDateTime.parse(shift.startDateTime).format(DateTimeFormatter.ofPattern("E M/d h:mma"))} - ${LocalDateTime.parse(shift.endDateTime).format(DateTimeFormatter.ofPattern("h:mma"))}"
         } catch (e: Exception) { shiftDateTime.text = "Unknown time" }
 
-        shiftPosition.text = getWorkstationDisplayName(shift.workstationId, shift.workstationName)
+        shiftPosition.text = getWorkstationDisplayName(shift.workstationId, shift.workstationName, shift.workstationCode)
         val cafeInfo = peerScheduleData?.cafeList?.firstOrNull { it.departmentName?.contains(shift.cafeNumber ?: "") == true } ?: peerScheduleData?.cafeList?.firstOrNull()
         val addressStr = cafeInfo?.address?.let { "${it.addressLine ?: ""}, ${it.city ?: ""}, ${it.state ?: ""}" }?.trim(',',' ') ?: ""
         shiftLocation.text = if (addressStr.isNotEmpty()) "#${shift.cafeNumber} - $addressStr" else "#${shift.cafeNumber}"
@@ -640,7 +640,7 @@ class PeerScheduleFragment : Fragment() {
         return peerScheduleData?.employeeInfo?.find { it.employeeId == employeeId }?.let { "${it.firstName} ${it.lastName}" }?.trim() ?: "Unknown"
     }
 
-    private fun getWorkstationDisplayName(workstationId: String?, fallbackName: String?): String {
+    private fun getWorkstationDisplayName(workstationId: String?, fallbackName: String?, workstationCode: String? = null): String {
         val customNames = mapOf(
             "QC_2" to "QC 2",
             "1ST_CASHIER_1" to "Cashier 1",
@@ -659,6 +659,8 @@ class PeerScheduleFragment : Fragment() {
             "1ST_SANDWICH_1" to "Sandwich 1",
             "Bake" to "Baker",
             "BAKER" to "Baker",
+            "SALAD" to "Salad 1",
+            "SANDWICH" to "Sandwich 1",
             "1ST_CASHIER" to "Cashier 1",
             "QC_1" to "QC 1",
             "QC_2" to "QC 2",
@@ -674,12 +676,23 @@ class PeerScheduleFragment : Fragment() {
             "LABORMANAGEMENT" to "Manager",
             "Labor Management" to "Manager"
         )
+        
+        var finalName: String? = null
+
         if (workstationId != null) {
-            val mapped = customNames[workstationId]
-            if (mapped != null) return mapped
+            finalName = customNames[workstationId]
         }
-        return fallbackName ?: workstationId ?: "Unknown"
+        if (finalName == null && workstationCode != null) {
+            finalName = customNames[workstationCode]
+        }
+        if (finalName == null && fallbackName != null) {
+            finalName = customNames[fallbackName]
+        }
+
+        return finalName ?: fallbackName ?: workstationId ?: "Unknown"
     }
+
+
 
     private fun updateTimestamp(timestamp: Long) {
         val now = System.currentTimeMillis()
