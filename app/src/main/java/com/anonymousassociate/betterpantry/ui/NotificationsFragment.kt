@@ -100,6 +100,7 @@ class NotificationsFragment : Fragment() {
         emptyStateText = view.findViewById(R.id.emptyStateText)
         permissionButton = view.findViewById(R.id.permissionButton)
         val settingsButton: android.widget.ImageButton = view.findViewById(R.id.settingsButton)
+        val notificationSettingsButton: android.widget.ImageButton = view.findViewById(R.id.notificationSettingsButton)
         
         val rootContainer = view.findViewById<View>(R.id.rootContainer)
         androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(rootContainer) { v, insets ->
@@ -115,6 +116,7 @@ class NotificationsFragment : Fragment() {
         }
 
         settingsButton.setOnClickListener { showSettingsMenu(it) }
+        notificationSettingsButton.setOnClickListener { showNotificationSettings() }
 
         permissionButton.setOnClickListener {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -176,6 +178,7 @@ class NotificationsFragment : Fragment() {
     }
 
     private fun updatePermissionButtonVisibility() {
+        val notificationSettingsButton: ImageButton? = view?.findViewById(R.id.notificationSettingsButton)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val isGranted = ContextCompat.checkSelfPermission(
                 requireContext(),
@@ -183,9 +186,15 @@ class NotificationsFragment : Fragment() {
             ) == PackageManager.PERMISSION_GRANTED
             
             permissionButton.visibility = if (isGranted) View.GONE else View.VISIBLE
+            notificationSettingsButton?.visibility = if (isGranted) View.VISIBLE else View.GONE
         } else {
             permissionButton.visibility = View.GONE
+            notificationSettingsButton?.visibility = View.VISIBLE
         }
+    }
+
+    private fun showNotificationSettings() {
+        NotificationSettingsDialog(requireContext()).show()
     }
 
     private fun showSettingsMenu(anchor: View) {

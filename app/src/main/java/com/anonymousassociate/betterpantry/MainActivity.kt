@@ -73,6 +73,9 @@ class MainActivity : AppCompatActivity() {
         window.statusBarColor = background
         window.navigationBarColor = background
 
+        // Initialize Notification Channels
+        NotificationWorker.createNotificationChannels(this)
+
         askNotificationPermission()
 
         // Handle Window Insets for Symmetrical Centering & Full-Width Navbar

@@ -41,6 +41,16 @@
         <activity
             android:name=".ui.ShiftDetailActivity"
             android:parentActivityName=".MainActivity" />
+
+        <activity
+            android:name=".ui.NotificationSettingsActivity"
+            android:exported="true"
+            android:theme="@style/Theme.BetterPantry">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.NOTIFICATION_PREFERENCES_SCREEN" />
+            </intent-filter>
+        </activity>
     </application>
 
 </manifest>

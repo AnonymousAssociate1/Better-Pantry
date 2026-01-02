@@ -39,6 +39,52 @@ class NotificationWorker(
     }
 
     companion object {
+        fun createNotificationChannels(context: Context) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                
+                val channels = listOf(
+                    NotificationChannel(
+                        "pantry_notifications_approval",
+                        "Shift Pickup Approvals",
+                        NotificationManager.IMPORTANCE_HIGH
+                    ).apply { description = "Shift pickup requests being approved" },
+                    
+                    NotificationChannel(
+                        "pantry_notifications_manager_help",
+                        "Manager Calls for Help",
+                        NotificationManager.IMPORTANCE_HIGH
+                    ).apply { description = "Calls for help from managers" },
+                    
+                    NotificationChannel(
+                        "pantry_notifications_shift_pickup",
+                        "Shift Pickups",
+                        NotificationManager.IMPORTANCE_DEFAULT
+                    ).apply { description = "Available shifts popping up" },
+                    
+                    NotificationChannel(
+                        "pantry_notifications_schedule",
+                        "Schedule Published",
+                        NotificationManager.IMPORTANCE_DEFAULT
+                    ).apply { description = "Notifications when a new schedule is published" },
+                    
+                    NotificationChannel(
+                        "pantry_notifications_other",
+                        "Other Notifications",
+                        NotificationManager.IMPORTANCE_DEFAULT
+                    ).apply { description = "General notifications" },
+
+                    NotificationChannel(
+                        "pantry_paycheck",
+                        "Paycheck Reminders",
+                        NotificationManager.IMPORTANCE_DEFAULT
+                    ).apply { description = "Reminders for payday" }
+                )
+                
+                notificationManager.createNotificationChannels(channels)
+            }
+        }
+
         fun checkAndSendNewNotifications(context: Context) {
             // This runs on a background thread to not block the caller
             GlobalScope.launch(Dispatchers.IO) {
@@ -61,10 +107,53 @@ class NotificationWorker(
                         val cachedIds = cachedNotifications.mapNotNull { it.notificationId }.toSet()
 
                         val newNotifications = fetchedNotifications.filter { it.notificationId !in cachedIds }
+                        val prefs = NotificationPreferences(context)
 
                         newNotifications.forEach { notification ->
                             if (notification.read != true) {
-                                sendNotification(context, notification, apiService)
+                                // Filter logic
+                                var shouldSend = false
+                                val appDataStr = notification.appData
+                                val subject = notification.subject ?: ""
+                                
+                                if (!appDataStr.isNullOrEmpty()) {
+                                    try {
+                                        val value = JSONTokener(appDataStr).nextValue()
+                                        val json = if (value is JSONObject) value else if (value is String) JSONTokener(value).nextValue() as? JSONObject else null
+                                        
+                                        if (json != null) {
+                                            val eventType = json.optString("eventType")
+                                            when (eventType) {
+                                                "POST_APPROVED_EVENT" -> shouldSend = prefs.shiftApprovedEnabled
+                                                "CALLFORHELP_INITIATED_EVENT" -> shouldSend = prefs.managerCallsEnabled
+                                                "POST_INITIATED_EVENT" -> shouldSend = prefs.shiftPickupsEnabled
+                                                else -> {
+                                                    // Fallback for known subjects if eventType is missing/generic
+                                                    shouldSend = if (subject.contains("Schedule Published", ignoreCase = true)) {
+                                                        prefs.schedulePublishedEnabled
+                                                    } else {
+                                                        prefs.otherEnabled
+                                                    }
+                                                }
+                                            }
+                                        } else {
+                                            shouldSend = prefs.otherEnabled
+                                        }
+                                    } catch (e: Exception) {
+                                        shouldSend = prefs.otherEnabled
+                                    }
+                                } else {
+                                    // No app data, check subject
+                                    shouldSend = if (subject.contains("Schedule Published", ignoreCase = true)) {
+                                        prefs.schedulePublishedEnabled
+                                    } else {
+                                        prefs.otherEnabled
+                                    }
+                                }
+
+                                if (shouldSend) {
+                                    sendNotification(context, notification, apiService)
+                                }
                             }
                         }
 
@@ -79,17 +168,59 @@ class NotificationWorker(
 
                 internal suspend fun sendNotification(context: Context, notification: NotificationData, apiService: PantryApiService? = null) {
 
-            val channelId = "pantry_notifications"
+            val prefs = NotificationPreferences(context)
+            var channelId = "pantry_notifications_other" // Default
+            var channelName = "Other Notifications"
+            var channelDesc = "General notifications"
+            var importance = NotificationManager.IMPORTANCE_DEFAULT
+
+            // Determine Channel based on content
+            val appDataStr = notification.appData
+            val subject = notification.subject ?: ""
+            
+            if (!appDataStr.isNullOrEmpty()) {
+                try {
+                    val value = JSONTokener(appDataStr).nextValue()
+                    val json = if (value is JSONObject) value else if (value is String) JSONTokener(value).nextValue() as? JSONObject else null
+                    
+                    if (json != null) {
+                        val eventType = json.optString("eventType")
+                        when (eventType) {
+                            "POST_APPROVED_EVENT" -> {
+                                channelId = "pantry_notifications_approval"
+                                channelName = "Shift Pickup Approvals"
+                                channelDesc = "Shift pickup requests being approved"
+                                importance = NotificationManager.IMPORTANCE_HIGH
+                            }
+                            "CALLFORHELP_INITIATED_EVENT" -> {
+                                channelId = "pantry_notifications_manager_help"
+                                channelName = "Manager Calls for Help"
+                                channelDesc = "Calls for help from managers"
+                                importance = NotificationManager.IMPORTANCE_HIGH
+                            }
+                            "POST_INITIATED_EVENT" -> {
+                                channelId = "pantry_notifications_shift_pickup"
+                                channelName = "Shift Pickups"
+                                channelDesc = "Available shifts popping up"
+                            }
+                        }
+                    }
+                } catch (e: Exception) {}
+            }
+
+            if (channelId == "pantry_notifications_other" && subject.contains("Schedule Published", ignoreCase = true)) {
+                channelId = "pantry_notifications_schedule"
+                channelName = "Schedule Published"
+                channelDesc = "New schedule published"
+            }
+
             val notificationId = notification.notificationId.hashCode()
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val name = "Pantry Notifications"
-                val descriptionText = "Notifications for new shifts and messages"
-                val importance = NotificationManager.IMPORTANCE_DEFAULT
-                val channel = NotificationChannel(channelId, name, importance).apply {
-                    description = descriptionText
-                }
                 val notificationManager: NotificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                val channel = NotificationChannel(channelId, channelName, importance).apply {
+                    description = channelDesc
+                }
                 notificationManager.createNotificationChannel(channel)
             }
 

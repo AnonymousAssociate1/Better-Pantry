@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- This selector uses a transparent drawable for all states, removing any visual feedback on press or selection. -->
+    <item android:drawable="@android:color/transparent" />
+</selector>
