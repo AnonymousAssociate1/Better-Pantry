@@ -125,9 +125,12 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
             }
         }
 
-        if (!forceRefresh && scheduleData == null) {
+        if (scheduleData == null) {
             loadingText.visibility = View.VISIBLE
-        } else if (!forceRefresh) {
+        }
+
+        // Ensure spinner shows up reliably
+        swipeRefreshLayout.post {
             swipeRefreshLayout.isRefreshing = true
         }
         
