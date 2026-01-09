@@ -250,10 +250,12 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
         // 2. Available Shifts (from track)
         val availableMembers = tracks
             .filter { it.type == "AVAILABLE" }
+            .sortedByDescending { it.primaryShiftRequest?.requestedAt }
             .distinctBy { it.primaryShiftRequest?.shift?.shiftId } // Deduplicate
             .filter { 
                 val state = it.primaryShiftRequest?.state
-                state == "AVAILABLE"
+                val isClaimed = it.relatedShiftRequests?.any { r -> r.state == "APPROVED" } == true
+                (state == "AVAILABLE" || state == "APPROVED") && !isClaimed
             }
             .mapNotNull {
             val s = it.primaryShiftRequest?.shift
