@@ -24,6 +24,10 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.button.MaterialButtonToggleGroup
 import com.google.gson.Gson
+import android.graphics.BitmapFactory
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
+import android.util.Base64
 import com.anonymousassociate.betterpantry.AuthManager
 import com.anonymousassociate.betterpantry.MainActivity
 import com.anonymousassociate.betterpantry.NotificationWorker
@@ -373,7 +377,8 @@ class NotificationsFragment : Fragment() {
             processedMessage = processedMessage.replace(Regex("(&nbsp;?)+\\s*$"), "")
             processedMessage = processedMessage.replace("&nbsp;", "<br>").replace("&nbsp", "<br>")
             
-            textView.text = trimTrailingWhitespace(android.text.Html.fromHtml(processedMessage, android.text.Html.FROM_HTML_MODE_COMPACT))
+            val imageGetter = Base64ImageGetter(textView)
+            textView.text = trimTrailingWhitespace(android.text.Html.fromHtml(processedMessage, android.text.Html.FROM_HTML_MODE_COMPACT, imageGetter, null))
             textView.textSize = 16f
             textView.setTextColor(androidx.core.content.ContextCompat.getColor(requireContext(), R.color.text_primary))
             LinkUtil.makeLinksClickable(textView)
@@ -400,9 +405,10 @@ class NotificationsFragment : Fragment() {
             preText = preText.replace(Regex("</?html.*?>", RegexOption.IGNORE_CASE), "")
             preText = preText.replace(Regex("</?body.*?>", RegexOption.IGNORE_CASE), "")
             
-            val spannedText = trimTrailingWhitespace(android.text.Html.fromHtml(preText, android.text.Html.FROM_HTML_MODE_COMPACT))
+            val textView = TextView(requireContext())
+            val imageGetter = Base64ImageGetter(textView)
+            val spannedText = trimTrailingWhitespace(android.text.Html.fromHtml(preText, android.text.Html.FROM_HTML_MODE_COMPACT, imageGetter, null))
             if (spannedText.isNotEmpty()) {
-                val textView = TextView(requireContext())
                 textView.text = spannedText
                 textView.textSize = 16f
                 textView.setTextColor(androidx.core.content.ContextCompat.getColor(requireContext(), R.color.text_primary))
@@ -1478,14 +1484,15 @@ class NotificationsFragment : Fragment() {
             allNotifications.filter { it.deleted != true } // Show read and unread
         }
         
-        adapter.updateNotifications(filteredList)
+        val sortedList = filteredList.sortedByDescending { it.createDateTime }
+        adapter.updateNotifications(sortedList)
         
         if (scrollToTop) {
             recyclerView.scrollToPosition(0)
         }
         
         // Show/hide empty state
-        if (filteredList.isEmpty() && hasLoaded) {
+        if (sortedList.isEmpty() && hasLoaded) {
             emptyStateText.visibility = View.VISIBLE
         } else {
             emptyStateText.visibility = View.GONE
@@ -1498,5 +1505,41 @@ class NotificationsFragment : Fragment() {
             i--
         }
         return source.subSequence(0, i)
+    }
+
+    inner class Base64ImageGetter(private val textView: TextView) : android.text.Html.ImageGetter {
+        override fun getDrawable(source: String): Drawable? {
+            if (source.startsWith("data:image/")) {
+                try {
+                    val base64Source = source.substringAfter(",")
+                    val decodedString = Base64.decode(base64Source, Base64.DEFAULT)
+                    val bitmap = BitmapFactory.decodeByteArray(decodedString, 0, decodedString.size)
+                    val drawable = BitmapDrawable(textView.resources, bitmap)
+                    
+                    val displayMetrics = textView.resources.displayMetrics
+                    // Calculate max width for Dialog
+                    // Hierarchy padding: 16 (Frame) + 20 (Linear) + 4 (Frame) + 16 (Linear) = 56dp per side. Total 112dp.
+                    // Use 120dp for safety.
+                    val viewWidth = textView.width
+                    val maxWidth = if (viewWidth > 0) {
+                        viewWidth - (textView.paddingStart + textView.paddingEnd)
+                    } else {
+                        displayMetrics.widthPixels - (120 * displayMetrics.density).toInt()
+                    }
+                    
+                    var width = drawable.intrinsicWidth
+                    var height = drawable.intrinsicHeight
+                    
+                    val ratio = maxWidth.toFloat() / width
+                    val newHeight = (height * ratio).toInt()
+                    
+                    drawable.setBounds(0, 0, maxWidth, newHeight)
+                    return drawable
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+            return null
+        }
     }
 }

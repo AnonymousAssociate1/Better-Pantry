@@ -1,6 +1,7 @@
 package com.anonymousassociate.betterpantry.ui.adapters
 
 import android.text.Html
+import android.text.TextUtils
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -13,6 +14,10 @@ import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
 import com.anonymousassociate.betterpantry.R
 import com.anonymousassociate.betterpantry.models.NotificationData
+import android.graphics.BitmapFactory
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
+import android.util.Base64
 import org.json.JSONObject
 import org.json.JSONTokener
 import java.time.Instant
@@ -269,213 +274,259 @@ class NotificationAdapter(
                 e.printStackTrace()
             }
             
-            if (displayMessage.contains("<table", ignoreCase = true)) {
-                parseAndRenderHtml(displayMessage, messageContainer)
-            } else {
-                val textView = TextView(itemView.context)
-                var processedMessage = displayMessage
-                // Remove trailing empty paragraphs with nbsp
-                processedMessage = processedMessage.replace(Regex("<p>\\s*&nbsp;\\s*</p>\\s*$"), "")
-                // Remove trailing &nbsp; (and variations)
-                processedMessage = processedMessage.replace(Regex("(&nbsp;?)+\\s*$"), "")
-                // Replace remaining &nbsp; with <br>
-                processedMessage = processedMessage.replace("&nbsp;", "<br>").replace("&nbsp", "<br>")
-                
-                textView.text = trimTrailingWhitespace(Html.fromHtml(processedMessage, Html.FROM_HTML_MODE_COMPACT))
-                textView.textSize = 14f
-com.anonymousassociate.betterpantry.ui.LinkUtil.makeLinksClickable(textView)
-                messageContainer.addView(textView)
-            }
-
-            // Format date
-            notification.createDateTime?.let {
-                try {
-                    val instant = Instant.parse(it)
-                    val formatter = DateTimeFormatter.ofPattern("MMM d, h:mm a")
-                        .withZone(ZoneId.systemDefault())
-                    dateText.text = formatter.format(instant)
-                } catch (e: Exception) {
-                    dateText.text = it
-                }
-            }
-
-            // Status Logic
-            val isDeleted = notification.deleted == true
-            val isRead = notification.read == true
-
-            // Read Indicator
-            readStatusIcon.visibility = if (isRead) View.GONE else View.VISIBLE
-
-            // Buttons
-            if (isDeleted) {
-                // Deleted Item: Show Undo, Hide Delete/Read
-                markAsReadButton.visibility = View.GONE
-                deleteButton.visibility = View.GONE
-                undoButton.visibility = View.VISIBLE
-                undoButton.setOnClickListener {
-                    notification.notificationId?.let { id -> onUndeleteClick(id) }
-                }
-            } else {
-                // Active Item: Show Delete, Hide Undo
-                undoButton.visibility = View.GONE
-                deleteButton.visibility = View.VISIBLE
-                deleteButton.setOnClickListener {
-                    notification.notificationId?.let { id -> onDeleteClick(id) }
-                }
-
-                // Mark as Read button only if unread
-                if (!isRead) {
-                    markAsReadButton.visibility = View.VISIBLE
-                    markAsReadButton.setOnClickListener {
-                        notification.notificationId?.let { id -> onMarkAsReadClick(id) }
-                    }
-                } else {
-                    markAsReadButton.visibility = View.GONE
-                }
-            }
-        }
-
-        private fun parseAndRenderHtml(html: String, container: LinearLayout) {
-            // Extract text before table (case-insensitive)
-            val tableIndex = html.indexOf("<table", ignoreCase = true)
-            if (tableIndex > 0) {
-                var preText = html.substring(0, tableIndex)
-                // Cleaning logic
-                preText = preText.replace(Regex("<p>\\s*&nbsp;\\s*</p>\\s*$"), "")
-                preText = preText.replace(Regex("(&nbsp;?)+\\s*$"), "")
-                preText = preText.replace("&nbsp;", "<br>").replace("&nbsp", "<br>")
-                preText = preText.replace(Regex("<head>.*?</head>", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)), "")
-                preText = preText.replace(Regex("</?html.*?>", RegexOption.IGNORE_CASE), "")
-                preText = preText.replace(Regex("</?body.*?>", RegexOption.IGNORE_CASE), "")
-                
-                val spannedText = trimTrailingWhitespace(Html.fromHtml(preText, Html.FROM_HTML_MODE_COMPACT))
-                if (spannedText.isNotEmpty()) {
-                    val textView = TextView(itemView.context)
-                    textView.text = spannedText
-                    textView.textSize = 14f
-                    textView.setTextColor(ContextCompat.getColor(itemView.context, R.color.text_primary))
-                    textView.setPadding(0, 0, 0, 16)
-                    com.anonymousassociate.betterpantry.ui.LinkUtil.makeLinksClickable(textView)
-                    container.addView(textView)
-                }
-            }
-
-            // Extract table content using Pattern (Java regex) for robust HTML tag matching
-            val tablePattern = Pattern.compile("<table.*?>(.*?)</table>", Pattern.DOTALL or Pattern.CASE_INSENSITIVE)
-            val matcher = tablePattern.matcher(html)
-            
-            if (matcher.find()) {
-                val tableContent = matcher.group(1) ?: ""
-                renderTable(tableContent, container)
-            }
-        }
-
-        private fun renderTable(tableHtml: String, container: LinearLayout) {
-            val context = itemView.context
-            val tableLayout = TableLayout(context)
-            tableLayout.layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-            tableLayout.isStretchAllColumns = true
-            
-            // Add border by setting background color
-            tableLayout.setBackgroundColor(ContextCompat.getColor(context, R.color.table_border_color))
-            tableLayout.setPadding(1, 1, 1, 1)
-
-            // Find rows
-            val rowPattern = Pattern.compile("<tr.*?>(.*?)</tr>", Pattern.DOTALL or Pattern.CASE_INSENSITIVE)
-            val rowMatcher = rowPattern.matcher(tableHtml)
-
-            while (rowMatcher.find()) {
-                val rowContent = rowMatcher.group(1) ?: ""
-                val tableRow = TableRow(context)
-                
-                // Use border color for row background to show through cell margins
-                tableRow.setBackgroundColor(ContextCompat.getColor(context, R.color.table_border_color))
-                
-                tableRow.layoutParams = TableLayout.LayoutParams(
-                    TableLayout.LayoutParams.MATCH_PARENT,
-                    TableLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    setMargins(0, 0, 0, 0)
-                }
-                
-                // Find cells (th or td)
-                val cellPattern = Pattern.compile("<(th|td).*?>(.*?)</\\1>", Pattern.DOTALL or Pattern.CASE_INSENSITIVE)
-                val cellMatcher = cellPattern.matcher(rowContent)
-                
-                while (cellMatcher.find()) {
-                    val tag = cellMatcher.group(1)
-                    var cellRaw = cellMatcher.group(2) ?: ""
-                    cellRaw = cellRaw.replace(Regex("<p>\\s*&nbsp;\\s*</p>\\s*$"), "")
-                    cellRaw = cellRaw.replace(Regex("(&nbsp;?)+\\s*$"), "")
-                    cellRaw = cellRaw.replace("&nbsp;", "<br>").replace("&nbsp", "<br>")
-                    
-                    val spannedText = trimTrailingWhitespace(Html.fromHtml(cellRaw, Html.FROM_HTML_MODE_COMPACT))
-                    var cellString = spannedText.toString().trim()
-                    var isDate = false
-                    
-                    // Attempt to format ISO dates in cells
-                    if (cellString.contains("T") && cellString.contains("-")) {
-                        try {
-                            val instant = try {
-                                Instant.parse(cellString + "Z") // Try adding Z if missing
-                            } catch (e: Exception) {
-                                try {
-                                    val ldt = java.time.LocalDateTime.parse(cellString)
-                                    ldt.atZone(ZoneId.systemDefault()).toInstant()
-                                } catch (e2: Exception) {
-                                    null
-                                }
-                            }
+                        if (displayMessage.contains("<table", ignoreCase = true)) {
+                            parseAndRenderHtml(displayMessage, messageContainer)
+                        } else {
+                            val textView = TextView(itemView.context)
+                            var processedMessage = displayMessage
+                            // Remove trailing empty paragraphs with nbsp
+                            processedMessage = processedMessage.replace(Regex("<p>\\s*&nbsp;\\s*</p>\\s*$"), "")
+                            // Remove trailing &nbsp; (and variations)
+                            processedMessage = processedMessage.replace(Regex("(&nbsp;?)+\\s*$"), "")
+                            // Replace remaining &nbsp; with <br>
+                            processedMessage = processedMessage.replace("&nbsp;", "<br>").replace("&nbsp", "<br>")
                             
-                            if (instant != null) {
-                                val formatter = if (cellString.contains("00:00:00")) {
-                                    DateTimeFormatter.ofPattern("M/d/yy")
-                                } else {
-                                    DateTimeFormatter.ofPattern("M/d h:mma")
-                                }
-                                cellString = formatter.withZone(ZoneId.systemDefault()).format(instant)
-                                isDate = true
+                            val imageGetter = Base64ImageGetter(textView)
+                            textView.text = trimTrailingWhitespace(Html.fromHtml(processedMessage, Html.FROM_HTML_MODE_COMPACT, imageGetter, null))
+                            textView.textSize = 14f
+                            textView.maxLines = 4
+                            textView.ellipsize = TextUtils.TruncateAt.END
+                            com.anonymousassociate.betterpantry.ui.LinkUtil.makeLinksClickable(textView)
+                            messageContainer.addView(textView)
+                        }
+            
+                        // Format date
+                        notification.createDateTime?.let {
+                            try {
+                                val instant = Instant.parse(it)
+                                val formatter = DateTimeFormatter.ofPattern("MMM d, h:mm a")
+                                    .withZone(ZoneId.systemDefault())
+                                dateText.text = formatter.format(instant)
+                            } catch (e: Exception) {
+                                dateText.text = it
                             }
-                        } catch (e: Exception) {
-                            // Leave as is
+                        }
+            
+                        // Status Logic
+                        val isDeleted = notification.deleted == true
+                        val isRead = notification.read == true
+            
+                        // Read Indicator
+                        readStatusIcon.visibility = if (isRead) View.GONE else View.VISIBLE
+            
+                        // Buttons
+                        if (isDeleted) {
+                            // Deleted Item: Show Undo, Hide Delete/Read
+                            markAsReadButton.visibility = View.GONE
+                            deleteButton.visibility = View.GONE
+                            undoButton.visibility = View.VISIBLE
+                            undoButton.setOnClickListener {
+                                notification.notificationId?.let { id -> onUndeleteClick(id) }
+                            }
+                        } else {
+                            // Active Item: Show Delete, Hide Undo
+                            undoButton.visibility = View.GONE
+                            deleteButton.visibility = View.VISIBLE
+                            deleteButton.setOnClickListener {
+                                notification.notificationId?.let { id -> onDeleteClick(id) }
+                            }
+            
+                            // Mark as Read button only if unread
+                            if (!isRead) {
+                                markAsReadButton.visibility = View.VISIBLE
+                                markAsReadButton.setOnClickListener {
+                                    notification.notificationId?.let { id -> onMarkAsReadClick(id) }
+                                }
+                            } else {
+                                markAsReadButton.visibility = View.GONE
+                            }
                         }
                     }
-
-                    val textView = TextView(context)
-                    textView.text = if (isDate) cellString else spannedText
-                    textView.setPadding(8, 16, 8, 16)
-                    textView.textSize = 12f
-                    textView.setTextColor(ContextCompat.getColor(context, R.color.text_primary))
-                    com.anonymousassociate.betterpantry.ui.LinkUtil.makeLinksClickable(textView)
-                    
-                    if (tag.equals("th", ignoreCase = true)) {
-                        textView.setTypeface(null, android.graphics.Typeface.BOLD)
-                        textView.setBackgroundColor(ContextCompat.getColor(context, R.color.table_header_background))
-                    } else {
-                        textView.setBackgroundColor(ContextCompat.getColor(context, R.color.table_row_background))
+            
+                    private fun parseAndRenderHtml(html: String, container: LinearLayout) {
+                        // Extract text before table (case-insensitive)
+                        val tableIndex = html.indexOf("<table", ignoreCase = true)
+                        if (tableIndex > 0) {
+                            var preText = html.substring(0, tableIndex)
+                            // Cleaning logic
+                            preText = preText.replace(Regex("<p>\\s*&nbsp;\\s*</p>\\s*$"), "")
+                            preText = preText.replace(Regex("(&nbsp;?)+\\s*$"), "")
+                            preText = preText.replace("&nbsp;", "<br>").replace("&nbsp", "<br>")
+                            preText = preText.replace(Regex("<head>.*?</head>", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)), "")
+                            preText = preText.replace(Regex("</?html.*?>", RegexOption.IGNORE_CASE), "")
+                            preText = preText.replace(Regex("</?body.*?>", RegexOption.IGNORE_CASE), "")
+                            
+                            val textView = TextView(itemView.context)
+                            val imageGetter = Base64ImageGetter(textView)
+                            val spannedText = trimTrailingWhitespace(Html.fromHtml(preText, Html.FROM_HTML_MODE_COMPACT, imageGetter, null))
+                            if (spannedText.isNotEmpty()) {
+                                textView.text = spannedText
+                                textView.textSize = 14f
+                                textView.setTextColor(ContextCompat.getColor(itemView.context, R.color.text_primary))
+                                textView.setPadding(0, 0, 0, 16)
+                                // No truncation for table headers/pre-text usually, but consistency might be good. 
+                                // However, tables usually imply more complex data. 
+                                // For now, I'll leave table layout as is or maybe truncate it too?
+                                // User said "if a notification is longer than 4 lines...".
+                                // Notifications with tables are likely long.
+                                // But truncating a LinearLayout with a Table inside is harder than a TextView.
+                                // Given the example was a simple HTML with Image, I'll focus on the TextView path.
+                                com.anonymousassociate.betterpantry.ui.LinkUtil.makeLinksClickable(textView)
+                                container.addView(textView)
+                            }
+                        }
+            
+                        // Extract table content using Pattern (Java regex) for robust HTML tag matching
+                        val tablePattern = Pattern.compile("<table.*?>(.*?)</table>", Pattern.DOTALL or Pattern.CASE_INSENSITIVE)
+                        val matcher = tablePattern.matcher(html)
+                        
+                        if (matcher.find()) {
+                            val tableContent = matcher.group(1) ?: ""
+                            renderTable(tableContent, container)
+                        }
                     }
-                    
-                    // Add margins to create grid lines
-                    val params = TableRow.LayoutParams(
-                        TableRow.LayoutParams.WRAP_CONTENT,
-                        TableRow.LayoutParams.MATCH_PARENT
-                    )
-                    params.setMargins(1, 1, 1, 1)
-                    textView.layoutParams = params
-                    
-                    tableRow.addView(textView)
+            
+                    private fun renderTable(tableHtml: String, container: LinearLayout) {
+                        val context = itemView.context
+                        val tableLayout = TableLayout(context)
+                        tableLayout.layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT
+                        )
+                        tableLayout.isStretchAllColumns = true
+                        
+                        // Add border by setting background color
+                        tableLayout.setBackgroundColor(ContextCompat.getColor(context, R.color.table_border_color))
+                        tableLayout.setPadding(1, 1, 1, 1)
+            
+                        // Find rows
+                        val rowPattern = Pattern.compile("<tr.*?>(.*?)</tr>", Pattern.DOTALL or Pattern.CASE_INSENSITIVE)
+                        val rowMatcher = rowPattern.matcher(tableHtml)
+            
+                        while (rowMatcher.find()) {
+                            val rowContent = rowMatcher.group(1) ?: ""
+                            val tableRow = TableRow(context)
+                            
+                            // Use border color for row background to show through cell margins
+                            tableRow.setBackgroundColor(ContextCompat.getColor(context, R.color.table_border_color))
+                            
+                            tableRow.layoutParams = TableLayout.LayoutParams(
+                                TableLayout.LayoutParams.MATCH_PARENT,
+                                TableLayout.LayoutParams.WRAP_CONTENT
+                            ).apply {
+                                setMargins(0, 0, 0, 0)
+                            }
+                            
+                            // Find cells (th or td)
+                            val cellPattern = Pattern.compile("<(th|td).*?>(.*?)</\\1>", Pattern.DOTALL or Pattern.CASE_INSENSITIVE)
+                            val cellMatcher = cellPattern.matcher(rowContent)
+                            
+                            while (cellMatcher.find()) {
+                                val tag = cellMatcher.group(1)
+                                var cellRaw = cellMatcher.group(2) ?: ""
+                                cellRaw = cellRaw.replace(Regex("<p>\\s*&nbsp;\\s*</p>\\s*$"), "")
+                                cellRaw = cellRaw.replace(Regex("(&nbsp;?)+\\s*$"), "")
+                                cellRaw = cellRaw.replace("&nbsp;", "<br>").replace("&nbsp", "<br>")
+                                
+                                val spannedText = trimTrailingWhitespace(Html.fromHtml(cellRaw, Html.FROM_HTML_MODE_COMPACT))
+                                var cellString = spannedText.toString().trim()
+                                var isDate = false
+                                
+                                // Attempt to format ISO dates in cells
+                                if (cellString.contains("T") && cellString.contains("-")) {
+                                    try {
+                                        val instant = try {
+                                            Instant.parse(cellString + "Z") // Try adding Z if missing
+                                        } catch (e: Exception) {
+                                            try {
+                                                val ldt = java.time.LocalDateTime.parse(cellString)
+                                                ldt.atZone(ZoneId.systemDefault()).toInstant()
+                                            } catch (e2: Exception) {
+                                                null
+                                            }
+                                        }
+                                        
+                                        if (instant != null) {
+                                            val formatter = if (cellString.contains("00:00:00")) {
+                                                DateTimeFormatter.ofPattern("M/d/yy")
+                                            } else {
+                                                DateTimeFormatter.ofPattern("M/d h:mma")
+                                            }
+                                            cellString = formatter.withZone(ZoneId.systemDefault()).format(instant)
+                                            isDate = true
+                                        }
+                                    } catch (e: Exception) {
+                                        // Leave as is
+                                    }
+                                }
+            
+                                val textView = TextView(context)
+                                textView.text = if (isDate) cellString else spannedText
+                                textView.setPadding(8, 16, 8, 16)
+                                textView.textSize = 12f
+                                textView.setTextColor(ContextCompat.getColor(context, R.color.text_primary))
+                                com.anonymousassociate.betterpantry.ui.LinkUtil.makeLinksClickable(textView)
+                                
+                                if (tag.equals("th", ignoreCase = true)) {
+                                    textView.setTypeface(null, android.graphics.Typeface.BOLD)
+                                    textView.setBackgroundColor(ContextCompat.getColor(context, R.color.table_header_background))
+                                } else {
+                                    textView.setBackgroundColor(ContextCompat.getColor(context, R.color.table_row_background))
+                                }
+                                
+                                // Add margins to create grid lines
+                                val params = TableRow.LayoutParams(
+                                    TableRow.LayoutParams.WRAP_CONTENT,
+                                    TableRow.LayoutParams.MATCH_PARENT
+                                )
+                                params.setMargins(1, 1, 1, 1)
+                                textView.layoutParams = params
+                                
+                                tableRow.addView(textView)
+                            }
+                            tableLayout.addView(tableRow)
+                        }
+                        container.addView(tableLayout)
+                    }
                 }
-                tableLayout.addView(tableRow)
-            }
-            container.addView(tableLayout)
-        }
-    }
-
-    private fun trimTrailingWhitespace(source: CharSequence): CharSequence {
-        var i = source.length
+            
+                inner class Base64ImageGetter(private val textView: TextView) : Html.ImageGetter {
+                    override fun getDrawable(source: String): Drawable? {
+                        if (source.startsWith("data:image/")) {
+                            try {
+                                val base64Source = source.substringAfter(",")
+                                val decodedString = Base64.decode(base64Source, Base64.DEFAULT)
+                                val bitmap = BitmapFactory.decodeByteArray(decodedString, 0, decodedString.size)
+                                val drawable = BitmapDrawable(textView.resources, bitmap)
+                                
+                                val displayMetrics = textView.resources.displayMetrics
+                                // Calculate max width
+                                // Priority 1: Use TextView width if laid out (and positive)
+                                // Priority 2: Screen width - horizontal padding/margins (approx 16+16 start + 16+16 end = 64dp -> use 80dp for safety)
+                                val viewWidth = textView.width
+                                val maxWidth = if (viewWidth > 0) {
+                                    viewWidth - (textView.paddingStart + textView.paddingEnd)
+                                } else {
+                                    displayMetrics.widthPixels - (80 * displayMetrics.density).toInt()
+                                }
+                                
+                                var width = drawable.intrinsicWidth
+                                var height = drawable.intrinsicHeight
+                                
+                                val ratio = maxWidth.toFloat() / width
+                                val newHeight = (height * ratio).toInt()
+                                
+                                drawable.setBounds(0, 0, maxWidth, newHeight)
+                                return drawable
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+                        }
+                        return null
+                    }
+                }
+            
+                private fun trimTrailingWhitespace(source: CharSequence): CharSequence {        var i = source.length
         while (i > 0 && Character.isWhitespace(source[i - 1])) {
             i--
         }
