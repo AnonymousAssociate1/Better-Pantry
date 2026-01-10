@@ -557,6 +557,7 @@ class HomeFragment : Fragment() {
         
         val dateHeader = view.findViewById<TextView>(R.id.dateHeader)
         val expandButton = view.findViewById<android.widget.ImageButton>(R.id.expandButton)
+        val shareButton = view.findViewById<android.widget.ImageButton>(R.id.shareButton)
         val closeButton = view.findViewById<android.widget.ImageButton>(R.id.closeButton)
         val chartContainer = view.findViewById<RelativeLayout>(R.id.chartContainer)
         val scrollView = view.findViewById<android.widget.HorizontalScrollView>(R.id.chartScrollView)
@@ -564,6 +565,11 @@ class HomeFragment : Fragment() {
         val noScheduleText = view.findViewById<View>(R.id.noScheduleText)
         
         dateHeader.text = daySchedule.date.format(DateTimeFormatter.ofPattern("EEEE, MMM d"))
+        
+        shareButton.setOnClickListener {
+            val dateStr = daySchedule.date.format(DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy"))
+            com.anonymousassociate.betterpantry.utils.ShareUtil.shareView(requireContext(), chartContainer, "Share Schedule", headerText = dateStr)
+        }
         
         closeButton.visibility = View.VISIBLE
         closeButton.setOnClickListener {
@@ -574,10 +580,12 @@ class HomeFragment : Fragment() {
             noScheduleText.visibility = View.VISIBLE
             scrollView.visibility = View.GONE
             expandButton.visibility = View.GONE
+            shareButton.visibility = View.GONE
         } else {
             noScheduleText.visibility = View.GONE
             scrollView.visibility = View.VISIBLE
             expandButton.visibility = View.VISIBLE
+            shareButton.visibility = View.VISIBLE
             
             expandButton.setOnClickListener {
                 val fragment = ExpandedScheduleFragment.newInstance(daySchedule)
@@ -646,6 +654,7 @@ class HomeFragment : Fragment() {
                 val postedByText = cardView.findViewById<TextView>(R.id.postedByText)
                 val coworkersHeaderWrapper = cardView.findViewById<View>(R.id.coworkersHeaderWrapper)
                 val expandCoworkersButton = cardView.findViewById<View>(R.id.expandCoworkersButton)
+                val shareCoworkersButton = cardView.findViewById<View>(R.id.shareCoworkersButton)
                 val coworkersContainer = cardView.findViewById<LinearLayout>(R.id.coworkersContainer)
                 val chartScrollView = cardView.findViewById<android.widget.HorizontalScrollView>(R.id.coworkersChartScrollView)
                 val chartContainer = cardView.findViewById<RelativeLayout>(R.id.coworkersChartContainer)
@@ -765,6 +774,24 @@ class HomeFragment : Fragment() {
                             coworkersHeaderWrapper.visibility = View.VISIBLE
                             coworkersContainer.visibility = View.GONE // Legacy
                             chartScrollView.visibility = View.VISIBLE
+                            
+                            shareCoworkersButton.setOnClickListener {
+                                val dateStr = try {
+                                    val s = LocalDateTime.parse(shift.startDateTime)
+                                    s.format(DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy"))
+                                } catch (e: Exception) { "Schedule" }
+                                
+                                val workstationId = shift.workstationId ?: shift.workstationCode ?: ""
+                                val workstationName = getWorkstationDisplayName(workstationId, shift.workstationName)
+                                
+                                val owner = if (isAvailable) "Available Shift" else {
+                                    val name = getEmployeeName(shift.employeeId)
+                                    if (shift.employeeId == authManager.getUserId()) "${authManager.getFirstName()} ${authManager.getLastName()}" else name
+                                }
+                                val subHeader = "$workstationName - $owner"
+                                
+                                com.anonymousassociate.betterpantry.utils.ShareUtil.shareView(requireContext(), chartContainer, "Share Schedule", headerText = dateStr, subHeaderText = subHeader)
+                            }
                             
                             val daySchedule = DaySchedule(LocalDate.now(), coworkerShifts)
                             val shiftStart = try { LocalDateTime.parse(shift.startDateTime) } catch(e: Exception) { null }
@@ -1308,13 +1335,22 @@ class HomeFragment : Fragment() {
 
     private fun getEmployeeName(employeeId: String?, infoList: List<com.anonymousassociate.betterpantry.models.EmployeeInfo>? = null): String {
         if (employeeId == null) return "Unknown"
+        
+        // 1. Try provided info list or scheduleData
         val list = infoList ?: scheduleData?.employeeInfo
         val employee = list?.find { it.employeeId == employeeId }
-        return if (employee != null) {
-            "${employee.firstName ?: ""} ${employee.lastName ?: ""}".trim().ifEmpty { "Unknown" }
-        } else {
-            "Unknown"
+        if (employee != null) {
+            return "${employee.firstName ?: ""} ${employee.lastName ?: ""}".trim().ifEmpty { "Unknown" }
         }
+        
+        // 2. Try Team Cache
+        val teamMembers = scheduleCache.getTeamSchedule()
+        val associate = teamMembers?.find { it.associate?.employeeId == employeeId }?.associate
+        if (associate != null) {
+            return "${associate.firstName ?: ""} ${associate.lastName ?: ""}".trim().ifEmpty { "Unknown" }
+        }
+        
+        return "Unknown"
     }
 
     private fun getWorkstationDisplayName(workstationId: String, fallbackName: String?): String {

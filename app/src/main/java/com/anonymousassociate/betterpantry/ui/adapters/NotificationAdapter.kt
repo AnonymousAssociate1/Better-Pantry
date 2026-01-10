@@ -132,6 +132,7 @@ class NotificationAdapter(
             // Handle message content
             messageContainer.removeAllViews()
             var displayMessage = notification.message ?: ""
+            var currentEventType: String? = null
 
             try {
                 val appDataStr = notification.appData
@@ -149,6 +150,7 @@ class NotificationAdapter(
 
                     if (json != null) {
                         val eventType = json.optString("eventType")
+                        currentEventType = eventType
                         
                         if (eventType == "CALLFORHELP_INITIATED_EVENT") {
                             val initiatorShift = json.optJSONObject("initiatorShift")
@@ -307,16 +309,23 @@ class NotificationAdapter(
                             }
                         }
             
-                        // Status Logic
-                        val isDeleted = notification.deleted == true
-                        val isRead = notification.read == true
+                                                // Status Logic
             
-                        // Read Indicator
-                        readStatusIcon.visibility = if (isRead) View.GONE else View.VISIBLE
+                                                val isDeleted = notification.deleted == true
             
-                        // Buttons
-                        if (isDeleted) {
-                            // Deleted Item: Show Undo, Hide Delete/Read
+                                                val isRead = notification.read == true
+            
+                                    
+            
+                                                // Read Indicator
+            
+                                                readStatusIcon.visibility = if (isRead) View.GONE else View.VISIBLE
+            
+                                    
+            
+                                                // Buttons
+            
+                                                if (isDeleted) {                            // Deleted Item: Show Undo, Hide Delete/Read
                             markAsReadButton.visibility = View.GONE
                             deleteButton.visibility = View.GONE
                             undoButton.visibility = View.VISIBLE

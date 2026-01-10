@@ -371,6 +371,7 @@ class PeerScheduleFragment : Fragment() {
         val shiftLocation = cardView.findViewById<TextView>(R.id.shiftLocation)
         val coworkersHeaderWrapper = cardView.findViewById<View>(R.id.coworkersHeaderWrapper)
         val expandCoworkersButton = cardView.findViewById<View>(R.id.expandCoworkersButton)
+        val shareCoworkersButton = cardView.findViewById<View>(R.id.shareCoworkersButton)
 
         try {
             shiftDateTime.text = "${LocalDateTime.parse(shift.startDateTime).format(DateTimeFormatter.ofPattern("E M/d h:mma"))} - ${LocalDateTime.parse(shift.endDateTime).format(DateTimeFormatter.ofPattern("h:mma"))}"
@@ -391,6 +392,25 @@ class PeerScheduleFragment : Fragment() {
                 chartScrollView.visibility = View.VISIBLE
                 expandCoworkersButton.setOnClickListener { showDayScheduleDialog(LocalDate.parse(shift.startDateTime?.substring(0, 10)), shift) }
                 val chartContainer = cardView.findViewById<RelativeLayout>(R.id.coworkersChartContainer)
+                
+                shareCoworkersButton.setOnClickListener {
+                     val dateStr = try {
+                         val s = LocalDateTime.parse(shift.startDateTime)
+                         s.format(DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy"))
+                     } catch (e: Exception) { "Schedule" }
+                     
+                     val workstationId = shift.workstationId ?: shift.workstationCode ?: ""
+                     val workstationName = getWorkstationDisplayName(workstationId, shift.workstationName)
+                     
+                     val owner = if (isAvailable) "Available Shift" else {
+                         val name = getEmployeeName(shift.employeeId)
+                         if (shift.employeeId == authManager.getUserId()) "${authManager.getFirstName()} ${authManager.getLastName()}" else name
+                     }
+                     val subHeader = "$workstationName - $owner"
+                     
+                     com.anonymousassociate.betterpantry.utils.ShareUtil.shareView(requireContext(), chartContainer, "Share Schedule", headerText = dateStr, subHeaderText = subHeader)
+                }
+                
                 chartScrollView.post {
                     val width = chartScrollView.width
                     val safeWidth = if (width > 0) width else resources.displayMetrics.widthPixels - 100
@@ -458,6 +478,13 @@ class PeerScheduleFragment : Fragment() {
         val scrollView = view.findViewById<android.widget.HorizontalScrollView>(R.id.chartScrollView)
 
         val expandButton = view.findViewById<View>(R.id.expandButton)
+        val shareButton = view.findViewById<View>(R.id.shareButton)
+        
+        shareButton.setOnClickListener {
+             val dateStr = date.format(DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy"))
+             com.anonymousassociate.betterpantry.utils.ShareUtil.shareView(requireContext(), chartContainer, "Share Schedule", headerText = dateStr)
+        }
+
         val focusTime = focusShift?.let { LocalDateTime.parse(it.startDateTime) } ?: if (date == LocalDate.now()) LocalDateTime.now() else null
         val focusEndTime = focusShift?.let { LocalDateTime.parse(it.endDateTime) }
 
@@ -467,6 +494,7 @@ class PeerScheduleFragment : Fragment() {
             view.findViewById<View>(R.id.noScheduleText).visibility = View.VISIBLE
             scrollView.visibility = View.GONE
             expandButton.visibility = View.GONE
+            shareButton.visibility = View.GONE
         } else {
             scrollView.post {
                 val result = ChartRenderer.drawChart(requireContext(), chartContainer, DaySchedule(date, allShiftsForDay), isExpanded = false, focusTime = focusTime, focusEndTime = focusEndTime, listener = object : ScheduleInteractionListener {
@@ -637,7 +665,19 @@ class PeerScheduleFragment : Fragment() {
 
     private fun getEmployeeName(employeeId: String?): String {
         if (employeeId == null) return "Unknown"
-        return peerScheduleData?.employeeInfo?.find { it.employeeId == employeeId }?.let { "${it.firstName} ${it.lastName}" }?.trim() ?: "Unknown"
+        
+        // 1. Try peerScheduleData
+        val infoName = peerScheduleData?.employeeInfo?.find { it.employeeId == employeeId }?.let { "${it.firstName} ${it.lastName}" }?.trim()
+        if (!infoName.isNullOrEmpty()) return infoName
+        
+        // 2. Try Team Cache
+        val teamMembers = scheduleCache.getTeamSchedule()
+        val associate = teamMembers?.find { it.associate?.employeeId == employeeId }?.associate
+        if (associate != null) {
+            return "${associate.firstName ?: ""} ${associate.lastName ?: ""}".trim().ifEmpty { "Unknown" }
+        }
+        
+        return "Unknown"
     }
 
     private fun getWorkstationDisplayName(workstationId: String?, fallbackName: String?, workstationCode: String? = null): String {

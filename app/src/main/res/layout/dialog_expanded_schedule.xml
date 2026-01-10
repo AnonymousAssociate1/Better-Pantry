@@ -19,14 +19,31 @@
             android:textStyle="bold"
             android:textColor="@color/text_primary"/>
 
-        <ImageButton
-            android:id="@+id/closeExpandedButton"
-            android:layout_width="32dp"
-            android:layout_height="32dp"
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
             android:layout_alignParentEnd="true"
-            android:src="@drawable/ic_close"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:tint="@color/text_primary" />
+            android:gravity="center_vertical">
+
+            <ImageButton
+                android:id="@+id/shareExpandedButton"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:src="@drawable/ic_share"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:tint="@color/text_primary"
+                android:padding="4dp"
+                android:layout_marginEnd="8dp" />
+
+            <ImageButton
+                android:id="@+id/closeExpandedButton"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:src="@drawable/ic_close"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:tint="@color/text_primary" />
+        </LinearLayout>
     </RelativeLayout>
 
     <!-- Scrollable container -->

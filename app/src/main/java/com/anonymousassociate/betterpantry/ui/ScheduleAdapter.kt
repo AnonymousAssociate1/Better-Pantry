@@ -66,13 +66,27 @@ class DayScheduleAdapter(
     inner class DayViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         private val dateHeader: TextView = itemView.findViewById(R.id.dateHeader)
         private val expandButton: ImageButton = itemView.findViewById(R.id.expandButton)
+        private val shareButton: ImageButton = itemView.findViewById(R.id.shareButton)
         private val chartContainer: RelativeLayout = itemView.findViewById(R.id.chartContainer)
         val scrollView: HorizontalScrollView = itemView.findViewById(R.id.chartScrollView) // Made public for Adapter access
 
         fun bind(day: DaySchedule) {
             dateHeader.text = day.date.format(DateTimeFormatter.ofPattern("EEEE, MMM d"))
             
+            if (day.shifts.isEmpty()) {
+                expandButton.visibility = View.GONE
+                shareButton.visibility = View.GONE
+            } else {
+                expandButton.visibility = View.VISIBLE
+                shareButton.visibility = View.VISIBLE
+            }
+            
             expandButton.setOnClickListener { listener.onExpandClick(day) }
+            
+            shareButton.setOnClickListener {
+                val dateStr = day.date.format(DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy"))
+                com.anonymousassociate.betterpantry.utils.ShareUtil.shareView(itemView.context, chartContainer, "Share Schedule", headerText = dateStr)
+            }
 
             // Draw chart and get "now" position
             val result = ChartRenderer.drawChart(itemView.context, chartContainer, day, isExpanded = false, listener = listener)

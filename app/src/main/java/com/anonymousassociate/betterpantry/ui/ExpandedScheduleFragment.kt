@@ -65,9 +65,21 @@ class ExpandedScheduleFragment : DialogFragment() {
 
         val header = view.findViewById<TextView>(R.id.expandedDateHeader)
         val closeBtn = view.findViewById<ImageButton>(R.id.closeExpandedButton)
+        val shareBtn = view.findViewById<ImageButton>(R.id.shareExpandedButton)
         val container = view.findViewById<RelativeLayout>(R.id.expandedChartContainer)
 
         header.text = day.date.format(DateTimeFormatter.ofPattern("EEEE, MMM d"))
+        
+        if (day.shifts.isEmpty()) {
+            shareBtn.visibility = View.GONE
+        } else {
+            shareBtn.visibility = View.VISIBLE
+            shareBtn.setOnClickListener {
+                 val dateStr = day.date.format(DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy"))
+                 com.anonymousassociate.betterpantry.utils.ShareUtil.shareView(requireContext(), container, "Share Full Schedule", headerText = dateStr)
+            }
+        }
+        
         closeBtn.setOnClickListener {
             if (showsDialog) {
                 dismiss()
