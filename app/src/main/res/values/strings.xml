@@ -1,14 +1,16 @@
 <resources>
     <string name="app_name">Better Pantry</string>
+
+<!--**Features**\n-->
+<!--**•** Share schedules as images!\n-->
+<!--**•** Added image rendering in notifications\n-->
+<!--**•** This sick \'what\'s new\' thing\n-->
+<!--\n-->
+
     <string name="release_notes">
-**Features**\n
-**•** Share schedules as images!\n
-**•** Added image rendering in notifications\n
-**•** This sick \'what\'s new\' thing\n
-\n
 **Fixes**\n
 **•** Shows preferred names over legal names\n
 **•** Updating info is consistent and functional\n
-**•** Shows preferred names over legal names\n
+**•** Logging in should be more consistent\n
     </string>
 </resources>
