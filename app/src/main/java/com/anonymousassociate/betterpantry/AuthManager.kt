@@ -108,11 +108,8 @@ class AuthManager(private val context: Context) {
     }
 
     suspend fun exchangeCodeForToken(code: String): Boolean = withContext(Dispatchers.IO) {
-        println("DEBUG: exchangeCodeForToken called with code length: ${code.length}")
         try {
             val verifier = prefs.getString(PREF_CODE_VERIFIER, "") ?: return@withContext false
-            println("DEBUG: Code verifier found: ${verifier.isNotEmpty()}")
-
             val formBody = FormBody.Builder()
                 .add("client_id", CLIENT_ID)
                 .add("scope", SCOPE)
@@ -127,13 +124,9 @@ class AuthManager(private val context: Context) {
                 .post(formBody)
                 .build()
 
-            println("DEBUG: Sending token request...")
             val response = client.newCall(request).execute()
-            println("DEBUG: Token response code: ${response.code}")
-
             if (response.isSuccessful) {
                 val bodyString = response.body?.string() ?: ""
-                println("DEBUG: Token response body length: ${bodyString.length}")
                 val json = JSONObject(bodyString)
                 val accessToken = json.getString("access_token")
                 val refreshToken = json.optString("refresh_token")
@@ -141,15 +134,11 @@ class AuthManager(private val context: Context) {
 
                 saveTokens(accessToken, refreshToken, expiresIn)
                 extractUserInfoFromToken(accessToken)
-                println("DEBUG: Token exchange successful")
                 return@withContext true
-            } else {
-                 println("DEBUG: Token response error: ${response.body?.string()}")
             }
 
             false
         } catch (e: Exception) {
-            println("DEBUG: Token exchange exception: ${e.message}")
             e.printStackTrace()
             false
         }

@@ -402,19 +402,16 @@ class MainActivity : AppCompatActivity() {
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: android.webkit.WebResourceRequest?): Boolean {
                 val url = request?.url?.toString()
-                println("DEBUG: WebView shouldOverrideUrlLoading: $url")
                 return handleUrl(view, url)
             }
 
             @Deprecated("Deprecated in Java")
             override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
-                println("DEBUG: WebView shouldOverrideUrlLoading (deprecated): $url")
                 return handleUrl(view, url)
             }
 
             private fun handleUrl(view: WebView?, url: String?): Boolean {
                 if (url != null && url.startsWith("pantry://")) {
-                    println("DEBUG: WebView captured redirect scheme: $url")
                     // Stop the WebView from trying to actually load this custom scheme
                     view?.stopLoading()
                     val uri = Uri.parse(url)
@@ -425,12 +422,10 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
-                println("DEBUG: WebView onPageStarted: $url")
                 super.onPageStarted(view, url, favicon)
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
-                println("DEBUG: WebView onPageFinished: $url")
                 super.onPageFinished(view, url)
             }
             
