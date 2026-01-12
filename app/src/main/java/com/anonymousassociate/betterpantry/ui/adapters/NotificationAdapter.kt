@@ -222,7 +222,12 @@ class NotificationAdapter(
                                 val eTime = LocalDateTime.parse(endStr).format(DateTimeFormatter.ofPattern("h:mma", Locale.US))
                                 val date = LocalDateTime.parse(startStr).format(DateTimeFormatter.ofPattern("M/d", Locale.US))
                                 
-                                val first = initiator?.optString("firstName") ?: ""
+                                val pref = initiator?.optString("preferredName")?.ifEmpty { null }
+                                val first = if (pref != null) {
+                                    pref
+                                } else {
+                                    initiator?.optString("firstName") ?: ""
+                                }
                                 val last = initiator?.optString("lastName") ?: ""
                                 val name = "$first $last".trim().ifEmpty { "Someone" }
                                 
@@ -263,7 +268,12 @@ class NotificationAdapter(
                                 val eTime = LocalDateTime.parse(endStr).format(DateTimeFormatter.ofPattern("h:mma", Locale.US))
                                 val date = LocalDateTime.parse(startStr).format(DateTimeFormatter.ofPattern("M/d", Locale.US))
                                 
-                                val first = initiator?.optString("firstName") ?: ""
+                                val pref = initiator?.optString("preferredName")?.ifEmpty { null }
+                                val first = if (pref != null) {
+                                    pref
+                                } else {
+                                    initiator?.optString("firstName") ?: ""
+                                }
                                 val last = initiator?.optString("lastName") ?: ""
                                 val name = "$first $last".trim().ifEmpty { "Someone" }
                                 

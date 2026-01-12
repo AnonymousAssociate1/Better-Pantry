@@ -109,7 +109,7 @@ class HomeFragment : Fragment() {
         if (cachedSchedule != null) {
             scheduleData = cachedSchedule
             displaySchedule(cachedSchedule)
-            updateTimestamp(scheduleCache.getLastUpdateTime())
+            updateTimestamp()
             startUpdateTimer()
         }
 
@@ -202,15 +202,17 @@ class HomeFragment : Fragment() {
 
     private fun loadSchedule(forceRefresh: Boolean = false) {
         if (!forceRefresh) {
-            val lastUpdate = scheduleCache.getLastUpdateTime()
-            val fiveMinutesAgo = System.currentTimeMillis() - (5 * 60 * 1000)
-            if (scheduleData != null && lastUpdate > fiveMinutesAgo) {
+            if (!scheduleCache.isScheduleStale() && scheduleData != null) {
                 swipeRefreshLayout.isRefreshing = false
                 return
             }
         }
 
-        swipeRefreshLayout.isRefreshing = true
+        // Trigger animation immediately for auto-refresh
+        swipeRefreshLayout.post {
+            swipeRefreshLayout.isRefreshing = true
+        }
+
         lifecycleScope.launch {
             try {
                 val schedule = apiService.getSchedule(30)
@@ -218,7 +220,7 @@ class HomeFragment : Fragment() {
                     scheduleData = it
                     scheduleCache.saveSchedule(it)
                     displaySchedule(it)
-                    updateTimestamp(System.currentTimeMillis())
+                    updateTimestamp()
                     startUpdateTimer()
                     
                     prefetchTeamMembers(it)
@@ -261,21 +263,20 @@ class HomeFragment : Fragment() {
                         try {
                             val shiftId = currentShift.shiftId ?: "${currentShift.startDateTime}-${currentShift.workstationId ?: currentShift.workstationCode}"
                             
-                            if (scheduleCache.getTeamMembers(shiftId) == null) {
-                                val startOfDay = LocalDateTime.parse(currentShift.startDateTime)
-                                    .with(java.time.LocalTime.MIN)
-                                    .format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+                            // Always fetch fresh data when schedule is refreshed
+                            val startOfDay = LocalDateTime.parse(currentShift.startDateTime)
+                                .with(java.time.LocalTime.MIN)
+                                .format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
 
-                                val teamMembers = apiService.getTeamMembers(
-                                    currentShift.cafeNumber,
-                                    currentShift.companyCode,
-                                    startOfDay,
-                                    currentShift.endDateTime
-                                )
+                            val teamMembers = apiService.getTeamMembers(
+                                currentShift.cafeNumber,
+                                currentShift.companyCode,
+                                startOfDay,
+                                currentShift.endDateTime
+                            )
 
-                                if (teamMembers != null) {
-                                    scheduleCache.saveTeamMembers(shiftId, teamMembers)
-                                }
+                            if (teamMembers != null) {
+                                scheduleCache.saveTeamMembers(shiftId, teamMembers)
                             }
                         } catch (e: Exception) {
                             e.printStackTrace()
@@ -345,31 +346,30 @@ class HomeFragment : Fragment() {
         }
     }
 
-    private fun updateTimestamp(timestamp: Long) {
-        val now = System.currentTimeMillis()
-        val diffMs = now - timestamp
-        val diffMinutes = diffMs / 1000 / 60
-
-        updatedText.text = when {
-            diffMinutes < 1 -> "Updated now"
-            diffMinutes == 1L -> "Updated 1 minute ago"
-            diffMinutes < 60 -> "Updated $diffMinutes minutes ago"
-            else -> {
-                val hours = diffMinutes / 60
-                if (hours == 1L) "Updated 1 hour ago" else "Updated $hours hours ago"
-            }
-        }
+    private fun updateTimestamp() {
+        updatedText.text = scheduleCache.getLastUpdateText()
     }
 
     private fun startUpdateTimer() {
         stopUpdateTimer()
         updateTimeRunnable = object : Runnable {
             override fun run() {
-                val lastUpdate = scheduleCache.getLastUpdateTime()
-                if (lastUpdate > 0) {
-                    updateTimestamp(lastUpdate)
+                updateTimestamp()
+                
+                if (scheduleCache.isScheduleStale()) {
+                    loadSchedule()
                 }
-                handler.postDelayed(this, 60000)
+                
+                val lastUpdate = scheduleCache.getLastUpdateTime()
+                val delay = if (lastUpdate == 0L) {
+                    60000L
+                } else {
+                    val now = System.currentTimeMillis()
+                    val diff = now - lastUpdate
+                    60000L - (diff % 60000L) + 50L
+                }
+                
+                handler.postDelayed(this, delay)
             }
         }
         handler.post(updateTimeRunnable!!)
@@ -423,7 +423,7 @@ class HomeFragment : Fragment() {
             mergedMembers.forEach { tm ->
                 val isMe = tm.associate?.employeeId == myId
                 val isAvailable = tm.associate?.employeeId == "AVAILABLE_SHIFT"
-                val firstName = tm.associate?.firstName ?: "Unknown"
+                val firstName = if (!tm.associate?.preferredName.isNullOrEmpty()) tm.associate?.preferredName ?: "Unknown" else tm.associate?.firstName ?: "Unknown"
                 val lastName = tm.associate?.lastName
                 
                 tm.shifts?.forEach { s ->
@@ -839,7 +839,7 @@ class HomeFragment : Fragment() {
                                 mergedMembers.forEach { tm ->
                                     val isMe = tm.associate?.employeeId == myId
                                     val isAvailable = tm.associate?.employeeId == "AVAILABLE_SHIFT"
-                                    val firstName = tm.associate?.firstName ?: "Unknown"
+                                    val firstName = if (!tm.associate?.preferredName.isNullOrEmpty()) tm.associate?.preferredName ?: "Unknown" else tm.associate?.firstName ?: "Unknown"
                                     val lastName = tm.associate?.lastName
                                     
                                     tm.shifts?.forEach { s ->
@@ -1056,7 +1056,7 @@ class HomeFragment : Fragment() {
                 val isMe = tm.associate?.employeeId == myId
                 
                 val isAvailable = tm.associate?.employeeId == "AVAILABLE_SHIFT"
-                val firstName = tm.associate?.firstName ?: "Unknown"
+                val firstName = if (!tm.associate?.preferredName.isNullOrEmpty()) tm.associate?.preferredName ?: "Unknown" else tm.associate?.firstName ?: "Unknown"
                 val lastName = tm.associate?.lastName
                 
                 tm.shifts?.forEach { s: TeamShift ->
@@ -1108,7 +1108,7 @@ class HomeFragment : Fragment() {
                     scheduleData = newSchedule
                     scheduleCache.saveSchedule(newSchedule)
                     displaySchedule(newSchedule)
-                    updateTimestamp(System.currentTimeMillis())
+                    updateTimestamp()
 
                     val date = LocalDate.parse(originalShift.startDateTime?.substring(0, 10))
                     val myShiftsOnDate = newSchedule.currentShifts?.filter {
@@ -1336,18 +1336,24 @@ class HomeFragment : Fragment() {
     private fun getEmployeeName(employeeId: String?, infoList: List<com.anonymousassociate.betterpantry.models.EmployeeInfo>? = null): String {
         if (employeeId == null) return "Unknown"
         
-        // 1. Try provided info list or scheduleData
-        val list = infoList ?: scheduleData?.employeeInfo
-        val employee = list?.find { it.employeeId == employeeId }
-        if (employee != null) {
-            return "${employee.firstName ?: ""} ${employee.lastName ?: ""}".trim().ifEmpty { "Unknown" }
-        }
-        
-        // 2. Try Team Cache
+        // 1. Try Team Cache (Richer data with preferredName)
         val teamMembers = scheduleCache.getTeamSchedule()
         val associate = teamMembers?.find { it.associate?.employeeId == employeeId }?.associate
         if (associate != null) {
-            return "${associate.firstName ?: ""} ${associate.lastName ?: ""}".trim().ifEmpty { "Unknown" }
+            val first = if (!associate.preferredName.isNullOrEmpty()) {
+                associate.preferredName
+            } else {
+                associate.firstName
+            }
+            return "$first ${associate.lastName ?: ""}".trim().ifEmpty { "Unknown" }
+        }
+
+        // 2. Try provided info list or scheduleData (EmployeeInfo)
+        val list = infoList ?: scheduleData?.employeeInfo
+        val employee = list?.find { it.employeeId == employeeId }
+        if (employee != null) {
+            // EmployeeInfo doesn't have preferredName, so no debug print needed here for preferred name usage
+            return "${employee.firstName ?: ""} ${employee.lastName ?: ""}".trim().ifEmpty { "Unknown" }
         }
         
         return "Unknown"

@@ -390,20 +390,56 @@ class MainActivity : AppCompatActivity() {
         binding.loginWebView.visibility = View.VISIBLE
 
         val webView = binding.loginWebView
+        val cookieManager = android.webkit.CookieManager.getInstance()
+        cookieManager.setAcceptCookie(true)
+        cookieManager.setAcceptThirdPartyCookies(webView, true)
+
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
+        webView.settings.databaseEnabled = true
+        webView.settings.userAgentString = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
 
         webView.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(view: WebView?, request: android.webkit.WebResourceRequest?): Boolean {
+                val url = request?.url?.toString()
+                println("DEBUG: WebView shouldOverrideUrlLoading: $url")
+                return handleUrl(view, url)
+            }
+
+            @Deprecated("Deprecated in Java")
             override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
+                println("DEBUG: WebView shouldOverrideUrlLoading (deprecated): $url")
+                return handleUrl(view, url)
+            }
+
+            private fun handleUrl(view: WebView?, url: String?): Boolean {
                 if (url != null && url.startsWith("pantry://")) {
+                    println("DEBUG: WebView captured redirect scheme: $url")
+                    // Stop the WebView from trying to actually load this custom scheme
+                    view?.stopLoading()
                     val uri = Uri.parse(url)
                     handleOAuthCallback(Intent(Intent.ACTION_VIEW, uri))
                     return true
                 }
                 return false
             }
-        }
 
+            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                println("DEBUG: WebView onPageStarted: $url")
+                super.onPageStarted(view, url, favicon)
+            }
+
+            override fun onPageFinished(view: WebView?, url: String?) {
+                println("DEBUG: WebView onPageFinished: $url")
+                super.onPageFinished(view, url)
+            }
+            
+            override fun onReceivedError(view: WebView?, request: android.webkit.WebResourceRequest?, error: android.webkit.WebResourceError?) {
+                println("DEBUG: WebView onReceivedError: ${error?.description}, Code: ${error?.errorCode}, URL: ${request?.url}")
+                super.onReceivedError(view, request, error)
+            }
+        }
+        
         webView.loadUrl(authManager.getAuthorizationUrl())
     }
 
@@ -664,8 +700,16 @@ class MainActivity : AppCompatActivity() {
             override fun run() {
                 if (isAuthenticated) {
                     NotificationWorker.checkAndSendNewNotifications(this@MainActivity)
+                    lifecycleScope.launch {
+                        try {
+                            val count = apiService.getNotificationCount()
+                            updateNotificationBadge(count)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
                 }
-                handler.postDelayed(this, 20 * 1000)
+                handler.postDelayed(this, 30 * 1000)
             }
         }
         handler.post(notificationCheckRunnable!!)

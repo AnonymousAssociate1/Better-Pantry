@@ -108,8 +108,10 @@ class AuthManager(private val context: Context) {
     }
 
     suspend fun exchangeCodeForToken(code: String): Boolean = withContext(Dispatchers.IO) {
+        println("DEBUG: exchangeCodeForToken called with code length: ${code.length}")
         try {
             val verifier = prefs.getString(PREF_CODE_VERIFIER, "") ?: return@withContext false
+            println("DEBUG: Code verifier found: ${verifier.isNotEmpty()}")
 
             val formBody = FormBody.Builder()
                 .add("client_id", CLIENT_ID)
@@ -125,21 +127,29 @@ class AuthManager(private val context: Context) {
                 .post(formBody)
                 .build()
 
+            println("DEBUG: Sending token request...")
             val response = client.newCall(request).execute()
+            println("DEBUG: Token response code: ${response.code}")
 
             if (response.isSuccessful) {
-                val json = JSONObject(response.body?.string() ?: "")
+                val bodyString = response.body?.string() ?: ""
+                println("DEBUG: Token response body length: ${bodyString.length}")
+                val json = JSONObject(bodyString)
                 val accessToken = json.getString("access_token")
                 val refreshToken = json.optString("refresh_token")
                 val expiresIn = json.getInt("expires_in")
 
                 saveTokens(accessToken, refreshToken, expiresIn)
                 extractUserInfoFromToken(accessToken)
+                println("DEBUG: Token exchange successful")
                 return@withContext true
+            } else {
+                 println("DEBUG: Token response error: ${response.body?.string()}")
             }
 
             false
         } catch (e: Exception) {
+            println("DEBUG: Token exchange exception: ${e.message}")
             e.printStackTrace()
             false
         }
@@ -226,7 +236,10 @@ class AuthManager(private val context: Context) {
 
     fun getAccessToken(): String? = prefs.getString(PREF_ACCESS_TOKEN, null)
     fun getUserId(): String? = prefs.getString(PREF_USER_ID, null)
-    fun getFirstName(): String? = prefs.getString(PREF_FIRST_NAME, null)
+    fun getFirstName(): String? {
+        val preferred = prefs.getString(PREF_PREFERRED_NAME, null)
+        return if (!preferred.isNullOrEmpty()) preferred else prefs.getString(PREF_FIRST_NAME, null)
+    }
     fun getLastName(): String? = prefs.getString(PREF_LAST_NAME, null)
     fun getPreferredName(): String? = prefs.getString(PREF_PREFERRED_NAME, null)
 

@@ -1157,17 +1157,22 @@ class NotificationsFragment : Fragment() {
     private fun getEmployeeName(employeeId: String?): String {
         if (employeeId == null) return "Unknown"
         
-        // 1. Try scheduleData info
-        val employee = scheduleData?.employeeInfo?.find { it.employeeId == employeeId }
-        if (employee != null) {
-            return "${employee.firstName ?: ""} ${employee.lastName ?: ""}".trim().ifEmpty { "Unknown" }
-        }
-        
-        // 2. Try Team Cache
+        // 1. Try Team Cache (Richer data)
         val teamMembers = scheduleCache.getTeamSchedule()
         val associate = teamMembers?.find { it.associate?.employeeId == employeeId }?.associate
         if (associate != null) {
-            return "${associate.firstName ?: ""} ${associate.lastName ?: ""}".trim().ifEmpty { "Unknown" }
+            val first = if (!associate.preferredName.isNullOrEmpty()) {
+                associate.preferredName
+            } else {
+                associate.firstName
+            }
+            return "$first ${associate.lastName ?: ""}".trim().ifEmpty { "Unknown" }
+        }
+
+        // 2. Try scheduleData info (EmployeeInfo)
+        val employee = scheduleData?.employeeInfo?.find { it.employeeId == employeeId }
+        if (employee != null) {
+            return "${employee.firstName ?: ""} ${employee.lastName ?: ""}".trim().ifEmpty { "Unknown" }
         }
         
         return "Unknown"
@@ -1177,9 +1182,14 @@ class NotificationsFragment : Fragment() {
         if (employeeId == null) return "Unknown"
         val employee = associates?.find { it.employeeId == employeeId }
         return if (employee != null) {
-            "${employee.firstName ?: ""} ${employee.lastName ?: ""}".trim().ifEmpty { "Unknown" }
+            val first = if (!employee.preferredName.isNullOrEmpty()) {
+                employee.preferredName
+            } else {
+                employee.firstName
+            }
+            return "$first ${employee.lastName ?: ""}".trim().ifEmpty { "Unknown" }
         } else {
-            getEmployeeName(employeeId) // Fallback to global list
+            getEmployeeName(employeeId) // Fallback to global list logic (TeamCache -> EmployeeInfo)
         }
     }
 
@@ -1467,7 +1477,7 @@ class NotificationsFragment : Fragment() {
                 val isMe = tm.associate?.employeeId == myId
                 
                 val isAvailable = tm.associate?.employeeId == "AVAILABLE_SHIFT"
-                val firstName = tm.associate?.firstName ?: "Unknown"
+                val firstName = if (!tm.associate?.preferredName.isNullOrEmpty()) tm.associate?.preferredName ?: "Unknown" else tm.associate?.firstName ?: "Unknown"
                 val lastName = tm.associate?.lastName
                 
                 tm.shifts?.forEach { s: TeamShift ->

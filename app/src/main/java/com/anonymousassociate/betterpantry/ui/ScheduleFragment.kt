@@ -103,7 +103,7 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
         if (cachedSchedule != null) {
             scheduleData = cachedSchedule
             displayScheduleFromData(cachedSchedule)
-            updateTimestamp(scheduleCache.getLastUpdateTime())
+            updateTimestamp()
             startUpdateTimer()
         }
 
@@ -116,20 +116,19 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
     }
 
     private fun loadScheduleData(forceRefresh: Boolean = false) {
-        if (!forceRefresh) {
-            val lastUpdate = scheduleCache.getLastUpdateTime()
-            val fiveMinutesAgo = System.currentTimeMillis() - (5 * 60 * 1000)
-            if (scheduleData != null && lastUpdate > fiveMinutesAgo) {
-                swipeRefreshLayout.isRefreshing = false
-                return
-            }
+        val isStale = scheduleCache.isScheduleStale()
+        val hasTeamData = scheduleCache.getTeamSchedule() != null
+
+        if (!forceRefresh && !isStale && scheduleData != null && hasTeamData) {
+            swipeRefreshLayout.isRefreshing = false
+            return
         }
 
         if (scheduleData == null) {
             loadingText.visibility = View.VISIBLE
         }
 
-        // Ensure spinner shows up reliably
+        // Trigger animation immediately for auto-refresh
         swipeRefreshLayout.post {
             swipeRefreshLayout.isRefreshing = true
         }
@@ -137,11 +136,17 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
         lifecycleScope.launch {
             try {
                 // Update from Network
-                val mySchedule = try { apiService.getSchedule(30) } catch(e: Exception) { null }
+                // If schedule is fresh (not stale) and we have it, reuse it. Otherwise fetch.
+                val mySchedule = if (!isStale && scheduleData != null) {
+                    scheduleData
+                } else {
+                    try { apiService.getSchedule(30) } catch(e: Exception) { null }
+                }
+
                 if (mySchedule != null) {
                     scheduleCache.saveSchedule(mySchedule)
                     scheduleData = mySchedule
-                    if (isAdded) updateTimestamp(System.currentTimeMillis())
+                    if (isAdded) updateTimestamp()
                     
                     fetchTeamMembers(mySchedule)
                 } else {
@@ -153,7 +158,10 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
                 if (scheduleData == null && isAdded) {
                      loadingText.text = "Failed to load schedule."
                 } else if (isAdded) {
-                     loadingText.visibility = View.GONE
+                     // We hide loading text only after team members attempt (inside fetchTeamMembers or here if it failed)
+                     if (scheduleCache.getTeamSchedule() != null) {
+                        loadingText.visibility = View.GONE
+                     }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -326,17 +334,22 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
     private fun getEmployeeName(id: String?, infoList: List<com.anonymousassociate.betterpantry.models.EmployeeInfo>?): String {
         if (id == null) return "Unknown"
         
-        // 1. Try infoList
-        val info = infoList?.find { it.employeeId == id }
-        if (info != null) {
-            return "${info.firstName} ${info.lastName}".trim()
-        }
-        
-        // 2. Try Team Cache
+        // 1. Try Team Cache (Richer data)
         val teamMembers = scheduleCache.getTeamSchedule()
         val associate = teamMembers?.find { it.associate?.employeeId == id }?.associate
         if (associate != null) {
-            return "${associate.firstName ?: ""} ${associate.lastName ?: ""}".trim().ifEmpty { "Unknown" }
+            val first = if (!associate.preferredName.isNullOrEmpty()) {
+                associate.preferredName
+            } else {
+                associate.firstName
+            }
+            return "$first ${associate.lastName ?: ""}".trim().ifEmpty { "Unknown" }
+        }
+
+        // 2. Try infoList (EmployeeInfo)
+        val info = infoList?.find { it.employeeId == id }
+        if (info != null) {
+            return "${info.firstName} ${info.lastName}".trim()
         }
         
         return "Coworker"
@@ -380,7 +393,7 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
                             shiftsForDay.add(
                                 EnrichedShift(
                                     shift = shift,
-                                    firstName = member.associate?.firstName ?: "Unknown",
+                                    firstName = if (!member.associate?.preferredName.isNullOrEmpty()) member.associate?.preferredName ?: "Unknown" else member.associate?.firstName ?: "Unknown",
                                     lastName = member.associate?.lastName,
                                     isMe = isMe,
                                     isAvailable = isAvailable,
@@ -868,7 +881,7 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
                 val isMe = tm.associate?.employeeId == myId
                 if (isMe) return@forEach
                 val isAvailable = tm.associate?.employeeId == "AVAILABLE_SHIFT"
-                val firstName = tm.associate?.firstName ?: "Unknown"
+                val firstName = if (!tm.associate?.preferredName.isNullOrEmpty()) tm.associate?.preferredName ?: "Unknown" else tm.associate?.firstName ?: "Unknown"
                 val lastName = tm.associate?.lastName
                 
                 tm.shifts?.forEach { s: TeamShift ->
@@ -931,31 +944,30 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
         popup.show()
     }
     
-    private fun updateTimestamp(timestamp: Long) {
-        val now = System.currentTimeMillis()
-        val diffMs = now - timestamp
-        val diffMinutes = diffMs / 1000 / 60
-
-        updatedText.text = when {
-            diffMinutes < 1 -> "Updated now"
-            diffMinutes == 1L -> "Updated 1 minute ago"
-            diffMinutes < 60 -> "Updated $diffMinutes minutes ago"
-            else -> {
-                val hours = diffMinutes / 60
-                if (hours == 1L) "Updated 1 hour ago" else "Updated $hours hours ago"
-            }
-        }
+    private fun updateTimestamp() {
+        updatedText.text = scheduleCache.getLastUpdateText()
     }
 
     private fun startUpdateTimer() {
         stopUpdateTimer()
         updateTimeRunnable = object : Runnable {
             override fun run() {
-                val lastUpdate = scheduleCache.getLastUpdateTime()
-                if (lastUpdate > 0) {
-                    updateTimestamp(lastUpdate)
+                updateTimestamp()
+                
+                if (scheduleCache.isScheduleStale()) {
+                    loadScheduleData()
                 }
-                handler.postDelayed(this, 60000)
+                
+                val lastUpdate = scheduleCache.getLastUpdateTime()
+                val delay = if (lastUpdate == 0L) {
+                    60000L
+                } else {
+                    val now = System.currentTimeMillis()
+                    val diff = now - lastUpdate
+                    60000L - (diff % 60000L) + 50L
+                }
+                
+                handler.postDelayed(this, delay)
             }
         }
         handler.post(updateTimeRunnable!!)

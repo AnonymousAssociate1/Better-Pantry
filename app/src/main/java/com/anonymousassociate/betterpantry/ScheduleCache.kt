@@ -30,6 +30,36 @@ class ScheduleCache(context: Context) {
         }
     }
 
+    fun isScheduleStale(): Boolean {
+        val lastUpdate = getLastUpdateTime()
+        if (lastUpdate == 0L) return true
+        val fiveMinutesAgo = System.currentTimeMillis() - (5 * 60 * 1000)
+        return lastUpdate < fiveMinutesAgo
+    }
+
+    fun hasCachedSchedule(): Boolean {
+        return prefs.contains("cached_schedule")
+    }
+
+    fun getLastUpdateText(): String {
+        val lastUpdate = getLastUpdateTime()
+        if (lastUpdate == 0L) return "Never updated"
+        
+        val now = System.currentTimeMillis()
+        val diffMs = now - lastUpdate
+        val diffMinutes = diffMs / 1000 / 60
+
+        return when {
+            diffMinutes < 1 -> "Updated now"
+            diffMinutes == 1L -> "Updated 1 minute ago"
+            diffMinutes < 60 -> "Updated $diffMinutes minutes ago"
+            else -> {
+                val hours = diffMinutes / 60
+                if (hours == 1L) "Updated 1 hour ago" else "Updated $hours hours ago"
+            }
+        }
+    }
+
     fun getLastUpdateTime(): Long {
         return prefs.getLong("last_update_time", 0)
     }

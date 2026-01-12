@@ -92,7 +92,7 @@ class PeerScheduleFragment : Fragment() {
                 )
                 
                 displaySchedule(peerScheduleData!!, peerShifts)
-                updateTimestamp(scheduleCache.getLastUpdateTime())
+                updateTimestamp()
                 startUpdateTimer()
             }
         }
@@ -135,7 +135,8 @@ class PeerScheduleFragment : Fragment() {
         val settingsButton: android.widget.ImageButton = view.findViewById(R.id.settingsButton)
         settingsButton.setOnClickListener { showSettingsMenu(it) }
         
-        val name = "${peer?.firstName} ${peer?.lastName}"
+        val firstName = if (!peer?.preferredName.isNullOrEmpty()) peer?.preferredName else peer?.firstName
+        val name = "$firstName ${peer?.lastName}"
         nameText.text = name.uppercase()
     }
 
@@ -230,7 +231,7 @@ class PeerScheduleFragment : Fragment() {
                         
                         if (teamMembers != null) {
                             scheduleCache.saveTeamSchedule(teamMembers)
-                            updateTimestamp(System.currentTimeMillis())
+                            updateTimestamp()
                             
                             // Re-load data from cache to display
                             val myId = authManager.getUserId()
@@ -258,15 +259,30 @@ class PeerScheduleFragment : Fragment() {
         }
     }
     
+    private fun updateTimestamp() {
+        updatedText.text = scheduleCache.getLastUpdateText()
+    }
+
     private fun startUpdateTimer() {
         stopUpdateTimer()
         updateTimeRunnable = object : Runnable {
             override fun run() {
-                val lastUpdate = scheduleCache.getLastUpdateTime()
-                if (lastUpdate > 0) {
-                    updateTimestamp(lastUpdate)
+                updateTimestamp()
+                
+                if (scheduleCache.isScheduleStale()) {
+                    loadPeerSchedule()
                 }
-                handler.postDelayed(this, 60000)
+                
+                val lastUpdate = scheduleCache.getLastUpdateTime()
+                val delay = if (lastUpdate == 0L) {
+                    60000L
+                } else {
+                    val now = System.currentTimeMillis()
+                    val diff = now - lastUpdate
+                    60000L - (diff % 60000L) + 50L
+                }
+                
+                handler.postDelayed(this, delay)
             }
         }
         handler.post(updateTimeRunnable!!)
@@ -339,7 +355,10 @@ class PeerScheduleFragment : Fragment() {
             dialogTitle.text = customTitle
         } else if (firstItem != null) {
              if (firstItem.employeeId == "AVAILABLE_SHIFT" || availableShifts.contains(firstItem)) dialogTitle.text = "Available Shift"
-             else if (firstItem.employeeId == peerId) dialogTitle.text = "${peer?.firstName} ${peer?.lastName}"
+             else if (firstItem.employeeId == peerId) {
+                 val first = if (!peer?.preferredName.isNullOrEmpty()) peer?.preferredName else peer?.firstName
+                 dialogTitle.text = "$first ${peer?.lastName}"
+             }
              else if (firstItem.employeeId == myId) dialogTitle.text = "My Shift"
              else dialogTitle.text = getEmployeeName(firstItem.employeeId)
         } else {
@@ -459,8 +478,10 @@ class PeerScheduleFragment : Fragment() {
                         "#${s.cafeNumber ?: ""} - ${address?.addressLine ?: ""}, ${address?.city ?: ""}, ${address?.state ?: ""}"
                     } ?: "#${s.cafeNumber ?: ""}"
 
+                    val firstName = if (!member.associate?.preferredName.isNullOrEmpty()) member.associate?.preferredName ?: "Unknown" else member.associate?.firstName ?: "Unknown"
+
                     EnrichedShift(
-                        shift = s.copy(employeeId = member.associate?.employeeId), firstName = member.associate?.firstName ?: "Unknown", lastName = member.associate?.lastName,
+                        shift = s.copy(employeeId = member.associate?.employeeId), firstName = firstName, lastName = member.associate?.lastName,
                         isMe = isMe || isFocal, isAvailable = member.associate?.employeeId == "AVAILABLE_SHIFT",
                         location = location
                     )
@@ -534,7 +555,8 @@ class PeerScheduleFragment : Fragment() {
                         if (s.startDateTime?.startsWith(targetStart.toLocalDate().toString()) == true && LocalDateTime.parse(s.startDateTime).isBefore(targetEnd) && LocalDateTime.parse(s.endDateTime).isAfter(targetStart)) {
                             val isFocal = memberId == focalId
                             val isMe = memberId == myId
-                            coworkerShifts.add(EnrichedShift(shift = s.copy(employeeId = memberId), firstName = tm.associate?.firstName ?: "", lastName = tm.associate?.lastName, isMe = isMe || isFocal, isAvailable = memberId == "AVAILABLE_SHIFT"))
+                            val firstName = if (!tm.associate?.preferredName.isNullOrEmpty()) tm.associate?.preferredName ?: "Unknown" else tm.associate?.firstName ?: "Unknown"
+                            coworkerShifts.add(EnrichedShift(shift = s.copy(employeeId = memberId), firstName = firstName, lastName = tm.associate?.lastName, isMe = isMe || isFocal, isAvailable = memberId == "AVAILABLE_SHIFT"))
                         }
                     } catch (e: Exception) {}
                 }
@@ -666,15 +688,22 @@ class PeerScheduleFragment : Fragment() {
     private fun getEmployeeName(employeeId: String?): String {
         if (employeeId == null) return "Unknown"
         
-        // 1. Try peerScheduleData
-        val infoName = peerScheduleData?.employeeInfo?.find { it.employeeId == employeeId }?.let { "${it.firstName} ${it.lastName}" }?.trim()
-        if (!infoName.isNullOrEmpty()) return infoName
-        
-        // 2. Try Team Cache
+        // 1. Try Team Cache (Richer data)
         val teamMembers = scheduleCache.getTeamSchedule()
         val associate = teamMembers?.find { it.associate?.employeeId == employeeId }?.associate
         if (associate != null) {
-            return "${associate.firstName ?: ""} ${associate.lastName ?: ""}".trim().ifEmpty { "Unknown" }
+            val first = if (!associate.preferredName.isNullOrEmpty()) {
+                associate.preferredName
+            } else {
+                associate.firstName
+            }
+            return "$first ${associate.lastName ?: ""}".trim().ifEmpty { "Unknown" }
+        }
+
+        // 2. Try peerScheduleData (EmployeeInfo)
+        val info = peerScheduleData?.employeeInfo?.find { it.employeeId == employeeId }
+        if (info != null) {
+            return "${info.firstName} ${info.lastName}".trim()
         }
         
         return "Unknown"
@@ -733,22 +762,6 @@ class PeerScheduleFragment : Fragment() {
     }
 
 
-
-    private fun updateTimestamp(timestamp: Long) {
-        val now = System.currentTimeMillis()
-        val diffMs = now - timestamp
-        val diffMinutes = diffMs / 1000 / 60
-
-        updatedText.text = when {
-            diffMinutes < 1 -> "Updated now"
-            diffMinutes == 1L -> "Updated 1 minute ago"
-            diffMinutes < 60 -> "Updated $diffMinutes minutes ago"
-            else -> {
-                val hours = diffMinutes / 60
-                if (hours == 1L) "Updated 1 hour ago" else "Updated $hours hours ago"
-            }
-        }
-    }
 
     private fun Int.dpToPx(): Int = (this * resources.displayMetrics.density).toInt()
 }

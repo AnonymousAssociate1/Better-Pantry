@@ -175,7 +175,7 @@ class PeopleFragment : Fragment() {
 
         val lastUpdate = scheduleCache.getLastUpdateTime()
         if (lastUpdate > 0) {
-            updateTimestamp(lastUpdate)
+            updateTimestamp()
             startUpdateTimer()
         }
 
@@ -191,11 +191,22 @@ class PeopleFragment : Fragment() {
         stopUpdateTimer()
         updateTimeRunnable = object : Runnable {
             override fun run() {
-                val lastUpdate = scheduleCache.getLastUpdateTime()
-                if (lastUpdate > 0) {
-                    updateTimestamp(lastUpdate)
+                updateTimestamp()
+                
+                if (scheduleCache.isScheduleStale()) {
+                    loadPeople()
                 }
-                handler.postDelayed(this, 60000)
+                
+                val lastUpdate = scheduleCache.getLastUpdateTime()
+                val delay = if (lastUpdate == 0L) {
+                    60000L
+                } else {
+                    val now = System.currentTimeMillis()
+                    val diff = now - lastUpdate
+                    60000L - (diff % 60000L) + 50L
+                }
+                
+                handler.postDelayed(this, delay)
             }
         }
         handler.post(updateTimeRunnable!!)
@@ -255,9 +266,7 @@ class PeopleFragment : Fragment() {
         }
 
         if (!forceRefresh) {
-            val lastUpdate = scheduleCache.getLastUpdateTime()
-            val fiveMinutesAgo = System.currentTimeMillis() - (5 * 60 * 1000)
-            if (lastUpdate > fiveMinutesAgo && cachedTeam != null && cachedTeam.isNotEmpty()) {
+            if (!scheduleCache.isScheduleStale() && cachedTeam != null && cachedTeam.isNotEmpty()) {
                 // Cache is fresh enough, don't refresh from network
                 swipeRefreshLayout.isRefreshing = false
                 return
@@ -309,7 +318,7 @@ class PeopleFragment : Fragment() {
                 if (teamMembers != null) {
                     scheduleCache.saveTeamSchedule(teamMembers)
                     scheduleCache.saveSchedule(schedule) 
-                    updateTimestamp(System.currentTimeMillis())
+                    updateTimestamp()
                     startUpdateTimer()
                     processTeamMembers(teamMembers)
                 }
@@ -344,19 +353,7 @@ class PeopleFragment : Fragment() {
         }
     }
 
-    private fun updateTimestamp(timestamp: Long) {
-        val now = System.currentTimeMillis()
-        val diffMs = now - timestamp
-        val diffMinutes = diffMs / 1000 / 60
-
-        updatedText.text = when {
-            diffMinutes < 1 -> "Updated now"
-            diffMinutes == 1L -> "Updated 1 minute ago"
-            diffMinutes < 60 -> "Updated $diffMinutes minutes ago"
-            else -> {
-                val hours = diffMinutes / 60
-                if (hours == 1L) "Updated 1 hour ago" else "Updated $hours hours ago"
-            }
-        }
+    private fun updateTimestamp() {
+        updatedText.text = scheduleCache.getLastUpdateText()
     }
 }
