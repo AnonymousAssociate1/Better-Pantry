@@ -1,16 +1,14 @@
 <resources>
     <string name="app_name">Better Pantry</string>
-
-<!--**Features**\n-->
-<!--**•** Share schedules as images!\n-->
-<!--**•** Added image rendering in notifications\n-->
-<!--**•** This sick \'what\'s new\' thing\n-->
-<!--\n-->
-
     <string name="release_notes">
+**Features**\n
+**•** Added option to show pay for shifts on home page\n
+**•** Added co-workers without shifts to the people tab\n
+\n
 **Fixes**\n
-**•** Shows preferred names over legal names\n
+**•** Shows and sorts by preferred names over legal names\n
 **•** Updating info is consistent and functional\n
 **•** Logging in should be more consistent\n
+**•** Notifications show cached version when network unavailable\n
     </string>
 </resources>
