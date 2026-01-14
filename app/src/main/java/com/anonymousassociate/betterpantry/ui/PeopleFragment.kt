@@ -193,7 +193,7 @@ class PeopleFragment : Fragment() {
             override fun run() {
                 updateTimestamp()
                 
-                if (scheduleCache.isScheduleStale()) {
+                if (scheduleCache.isTeamRosterStale()) {
                     loadPeople()
                 }
                 
@@ -260,13 +260,14 @@ class PeopleFragment : Fragment() {
 
     private fun loadPeople(forceRefresh: Boolean = false) {
         // Always try to load from cache first to show something immediately
-        val cachedTeam = scheduleCache.getTeamSchedule()
+        val cachedTeam = scheduleCache.getTeamRoster()
+        val cachedSchedule = scheduleCache.getSchedule()
         if (cachedTeam != null) {
-            processTeamMembers(cachedTeam)
+            processTeamMembers(cachedTeam, cachedSchedule)
         }
 
         if (!forceRefresh) {
-            if (!scheduleCache.isScheduleStale() && cachedTeam != null && cachedTeam.isNotEmpty()) {
+            if (!scheduleCache.isTeamRosterStale() && cachedTeam != null && cachedTeam.isNotEmpty()) {
                 // Cache is fresh enough, don't refresh from network
                 swipeRefreshLayout.isRefreshing = false
                 return
@@ -306,8 +307,8 @@ class PeopleFragment : Fragment() {
                 val companyCode = sampleShift.companyCode!!
 
                 val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss")
-                val startStr = LocalDateTime.now().withHour(0).withMinute(0).withSecond(0).format(formatter)
-                val endStr = LocalDateTime.now().plusDays(30).withHour(23).withMinute(59).withSecond(59).format(formatter)
+                val startStr = LocalDateTime.now().minusDays(90).withHour(0).withMinute(0).withSecond(0).format(formatter)
+                val endStr = LocalDateTime.now().plusDays(90).withHour(23).withMinute(59).withSecond(59).format(formatter)
 
                 val teamMembers = try {
                     apiService.getTeamMembers(cafeNo, companyCode, startStr, endStr)
@@ -316,23 +317,45 @@ class PeopleFragment : Fragment() {
                 }
 
                 if (teamMembers != null) {
-                    scheduleCache.saveTeamSchedule(teamMembers)
+                    scheduleCache.saveTeamRoster(teamMembers)
                     scheduleCache.saveSchedule(schedule) 
                     updateTimestamp()
                     startUpdateTimer()
-                    processTeamMembers(teamMembers)
+                    processTeamMembers(teamMembers, schedule)
                 }
             }
         }
     }
 
-    private fun processTeamMembers(teamMembers: List<TeamMember>) {
-        val uniqueAssociates = teamMembers.mapNotNull { it.associate }
-            .distinctBy { it.employeeId }
-            .sortedBy { it.firstName }
+    private fun processTeamMembers(teamMembers: List<TeamMember>, schedule: com.anonymousassociate.betterpantry.models.ScheduleData? = null) {
+        val associatesFromTeam = teamMembers.mapNotNull { it.associate }
+        
+        val associatesFromInfo = schedule?.employeeInfo?.map { info ->
+            Associate(
+                employeeId = info.employeeId,
+                firstName = info.firstName,
+                lastName = info.lastName,
+                preferredName = null 
+            )
+        } ?: emptyList()
+
+        // Merge: prefer associatesFromTeam because they have preferredName
+        val allMap = associatesFromInfo.associateBy { it.employeeId }.toMutableMap()
+        associatesFromTeam.forEach { 
+             if (it.employeeId != null) allMap[it.employeeId] = it 
+        }
+
+        val uniqueAssociates = allMap.values
+            .sortedBy { associate ->
+                if (!associate.preferredName.isNullOrEmpty()) {
+                    associate.preferredName
+                } else {
+                    associate.firstName
+                }
+            }
             .filter { it.employeeId != "AVAILABLE_SHIFT" }
 
-        allAssociates = uniqueAssociates
+        allAssociates = uniqueAssociates.toList()
         adapter.updateList(allAssociates)
         
         val currentQuery = searchBar.text.toString()

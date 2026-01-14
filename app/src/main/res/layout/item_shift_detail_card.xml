@@ -55,7 +55,20 @@
                 android:textSize="14sp"
                 android:textColor="@color/text_primary"
                 android:layout_gravity="center_horizontal"
-                android:layout_marginBottom="12dp" />
+                android:layout_marginBottom="4dp" />
+
+            <!-- Money (Shift specific) -->
+            <TextView
+                android:id="@+id/cardMoneyText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="$0.00"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textColor="@color/work_day_green"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginBottom="12dp"
+                android:visibility="gone" />
 
             <!-- Coworkers Header Wrapper -->
             <RelativeLayout

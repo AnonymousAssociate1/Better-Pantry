@@ -33,14 +33,36 @@
                 android:textStyle="bold"
                 android:textColor="@color/text_primary" />
 
-            <TextView
-                android:id="@+id/shiftLocationText"
-                android:layout_width="wrap_content"
+            <RelativeLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:text="Bake - Bake"
-                android:textSize="14sp"
-                android:textColor="@color/text_secondary" />
+                android:layout_marginTop="4dp">
+
+                <TextView
+                    android:id="@+id/shiftLocationText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Bake - Bake"
+                    android:textSize="14sp"
+                    android:textColor="@color/text_secondary"
+                    android:layout_alignParentStart="true"
+                    android:layout_toStartOf="@id/shiftMoneyText"
+                    android:layout_centerVertical="true"
+                    android:layout_marginEnd="8dp"/>
+
+                <TextView
+                    android:id="@+id/shiftMoneyText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="$0.00"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/work_day_green"
+                    android:layout_alignParentEnd="true"
+                    android:layout_centerVertical="true"
+                    android:visibility="gone" />
+
+            </RelativeLayout>
 
         </LinearLayout>
 

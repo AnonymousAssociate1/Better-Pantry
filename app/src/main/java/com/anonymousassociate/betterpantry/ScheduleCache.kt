@@ -96,7 +96,10 @@ class ScheduleCache(context: Context) {
 
     fun saveTeamSchedule(members: List<TeamMember>) {
         val json = gson.toJson(members)
-        prefs.edit().putString("team_schedule_full", json).apply()
+        prefs.edit()
+            .putString("team_schedule_full", json)
+            .putLong("team_schedule_last_update_time", System.currentTimeMillis())
+            .apply()
     }
 
     fun getTeamSchedule(): List<TeamMember>? {
@@ -107,6 +110,38 @@ class ScheduleCache(context: Context) {
         } catch (e: Exception) {
             null
         }
+    }
+
+    fun isTeamScheduleStale(): Boolean {
+        val lastUpdate = prefs.getLong("team_schedule_last_update_time", 0)
+        if (lastUpdate == 0L) return true
+        val fiveMinutesAgo = System.currentTimeMillis() - (5 * 60 * 1000)
+        return lastUpdate < fiveMinutesAgo
+    }
+
+    fun saveTeamRoster(members: List<TeamMember>) {
+        val json = gson.toJson(members)
+        prefs.edit()
+            .putString("team_roster_full", json)
+            .putLong("team_roster_last_update_time", System.currentTimeMillis())
+            .apply()
+    }
+
+    fun getTeamRoster(): List<TeamMember>? {
+        val json = prefs.getString("team_roster_full", null) ?: return null
+        val type = object : TypeToken<List<TeamMember>>() {}.type
+        return try {
+            gson.fromJson(json, type)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    fun isTeamRosterStale(): Boolean {
+        val lastUpdate = prefs.getLong("team_roster_last_update_time", 0)
+        if (lastUpdate == 0L) return true
+        val fiveMinutesAgo = System.currentTimeMillis() - (5 * 60 * 1000)
+        return lastUpdate < fiveMinutesAgo
     }
 
     fun getFavorites(): Set<String> {

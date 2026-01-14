@@ -55,8 +55,10 @@ class HomeFragment : Fragment() {
     private lateinit var swipeRefreshLayout: SwipeRefreshLayout
     private lateinit var updateCard: androidx.cardview.widget.CardView
     private lateinit var updateDivider: View
+    private lateinit var moneyPreferences: com.anonymousassociate.betterpantry.MoneyPreferences
 
     private var scheduleData: ScheduleData? = null
+    private var moneyDialog: Dialog? = null
     private val handler = Handler(Looper.getMainLooper())
     private var updateTimeRunnable: Runnable? = null
     private var detailDialog: Dialog? = null
@@ -75,6 +77,7 @@ class HomeFragment : Fragment() {
         authManager = AuthManager(requireContext())
         apiService = PantryApiService(authManager)
         scheduleCache = ScheduleCache(requireContext())
+        moneyPreferences = com.anonymousassociate.betterpantry.MoneyPreferences(requireContext())
 
         calendarRecyclerView = view.findViewById(R.id.calendarRecyclerView)
         shiftsRecyclerView = view.findViewById(R.id.shiftsRecyclerView)
@@ -87,6 +90,7 @@ class HomeFragment : Fragment() {
         updateCard = view.findViewById(R.id.updateCard)
         updateDivider = view.findViewById(R.id.updateDivider)
         val settingsButton: android.widget.ImageButton = view.findViewById(R.id.settingsButton)
+        val moneyButton: android.widget.ImageButton = view.findViewById(R.id.moneyButton)
         
         val nestedScrollView = view.findViewById<androidx.core.widget.NestedScrollView>(R.id.nestedScrollView)
         androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(nestedScrollView) { v, insets ->
@@ -101,6 +105,7 @@ class HomeFragment : Fragment() {
         }
 
         settingsButton.setOnClickListener { showSettingsMenu(it) }
+        moneyButton.setOnClickListener { showMoneySettingsDialog() }
 
         setupCalendar()
         setupSwipeRefresh()
@@ -115,6 +120,162 @@ class HomeFragment : Fragment() {
 
         loadSchedule()
         checkForUpdates()
+    }
+
+    private fun showMoneySettingsDialog() {
+        if (moneyDialog?.isShowing == true) return
+
+        val dialog = Dialog(requireContext())
+        moneyDialog = dialog
+        dialog.setContentView(R.layout.dialog_money_settings)
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.window?.setLayout((resources.displayMetrics.widthPixels * 0.9).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
+
+        val switch = dialog.findViewById<com.google.android.material.switchmaterial.SwitchMaterial>(R.id.showMoneySwitch)
+        val closeButton = dialog.findViewById<View>(R.id.closeButton)
+        val container = dialog.findViewById<View>(R.id.moneySettingsContainer)
+
+        closeButton.setOnClickListener { dialog.dismiss() }
+        val wageInput = dialog.findViewById<android.widget.EditText>(R.id.hourlyWageInput)
+        val hoursInput = dialog.findViewById<android.widget.EditText>(R.id.hoursInput)
+        val resultText = dialog.findViewById<TextView>(R.id.calculatedMoneyText)
+        val weekRangeText = dialog.findViewById<TextView>(R.id.weekRangeText)
+
+        // Initialize state
+        switch.isChecked = moneyPreferences.showMoney
+        container.visibility = if (switch.isChecked) View.VISIBLE else View.GONE
+        
+        val savedWage = moneyPreferences.hourlyWage
+        if (savedWage > 0) {
+            wageInput.setText(savedWage.toString())
+        }
+
+        // Calculate scheduled hours for current week (Wed-Tue)
+        val scheduledHours = calculateScheduledHoursForCurrentWeek()
+        // Format hours: if whole number, no decimal. Else, up to 2 decimals? "Least decimals".
+        val scheduledHoursStr = if (scheduledHours % 1.0 == 0.0) {
+            scheduledHours.toInt().toString()
+        } else {
+            String.format("%.2f", scheduledHours).trimEnd('0').trimEnd('.')
+        }
+        
+        hoursInput.setText(scheduledHoursStr)
+        
+        // Setup Date Range Text
+        if (scheduledHours > 0) {
+            val range = getWeekDateRangeText()
+            weekRangeText.text = "$range you're scheduled: $scheduledHoursStr hours"
+            weekRangeText.visibility = View.VISIBLE
+        } else {
+            weekRangeText.visibility = View.GONE
+        }
+
+        fun calculate() {
+            val wageStr = wageInput.text.toString()
+            val hoursStr = hoursInput.text.toString()
+            
+            val wage = wageStr.toFloatOrNull() ?: 0f
+            val hours = hoursStr.toFloatOrNull() ?: 0f
+            
+            val total = wage * hours
+            resultText.text = String.format("$%.2f", total)
+            
+            // Auto-save logic
+            if (switch.isChecked) {
+                moneyPreferences.hourlyWage = wage
+                // Also update list if changed? Maybe too frequent. 
+                // We can update on dismiss or delay.
+                // Let's rely on dismiss for list refresh, but save preference immediately.
+            }
+            
+            // Show/Hide range text based on if input matches scheduled
+            val inputHours = hours
+            // Compare with tolerance
+            if (Math.abs(inputHours - scheduledHours) < 0.01) {
+                 if (scheduledHours > 0) weekRangeText.visibility = View.VISIBLE
+            } else {
+                 weekRangeText.visibility = View.GONE
+            }
+        }
+        
+        // Initial calc
+        calculate()
+
+        switch.setOnCheckedChangeListener { _, isChecked ->
+            moneyPreferences.showMoney = isChecked
+            container.visibility = if (isChecked) View.VISIBLE else View.GONE
+            if (!isChecked) {
+                // If turned off, refresh list immediately
+                scheduleData?.let { displaySchedule(it) }
+            } else {
+                // If turned on, calculate (which saves wage)
+                calculate()
+            }
+        }
+
+        val watcher = object : android.text.TextWatcher {
+            override fun afterTextChanged(s: android.text.Editable?) { calculate() }
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+        }
+        wageInput.addTextChangedListener(watcher)
+        hoursInput.addTextChangedListener(watcher)
+
+        dialog.setOnDismissListener {
+            // Refresh list on dismiss to reflect new settings
+            scheduleData?.let { displaySchedule(it) }
+        }
+
+        dialog.show()
+    }
+
+    private fun getWeekDateRangeText(): String {
+        val schedule = scheduleData ?: return ""
+        val myShifts = schedule.currentShifts ?: return ""
+        
+        val today = LocalDate.now()
+        val startOfWeek = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.WEDNESDAY))
+        val endOfWeek = startOfWeek.plusDays(6)
+
+        val shiftsInWeek = myShifts.filter {
+            try {
+                val date = LocalDateTime.parse(it.startDateTime).toLocalDate()
+                !date.isBefore(startOfWeek) && !date.isAfter(endOfWeek)
+            } catch(e: Exception) { false }
+        }.sortedBy { it.startDateTime }
+
+        if (shiftsInWeek.isEmpty()) return ""
+
+        val first = LocalDateTime.parse(shiftsInWeek.first().startDateTime)
+        val last = LocalDateTime.parse(shiftsInWeek.last().startDateTime)
+        
+        val formatter = DateTimeFormatter.ofPattern("M/d")
+        return "${first.format(formatter)} - ${last.format(formatter)}"
+    }
+
+    private fun calculateScheduledHoursForCurrentWeek(): Float {
+        val schedule = scheduleData ?: return 0f
+        val myShifts = schedule.currentShifts ?: return 0f
+        
+        val today = LocalDate.now()
+        val startOfWeek = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.WEDNESDAY))
+        val endOfWeek = startOfWeek.plusDays(6)
+
+        var totalHours = 0.0
+        
+        myShifts.forEach { shift ->
+            try {
+                val start = LocalDateTime.parse(shift.startDateTime)
+                val date = start.toLocalDate()
+                if (!date.isBefore(startOfWeek) && !date.isAfter(endOfWeek)) {
+                    val end = LocalDateTime.parse(shift.endDateTime)
+                    val duration = java.time.Duration.between(start, end).toMinutes() / 60.0
+                    totalHours += duration
+                }
+            } catch (e: Exception) {}
+        }
+        
+        return totalHours.toFloat()
     }
 
     private fun showSettingsMenu(anchor: View) {
@@ -296,7 +457,9 @@ class HomeFragment : Fragment() {
                 shifts = distinctShifts,
                 onShiftClick = { shift ->
                     showShiftDetailDialog(listOf(shift), emptyList())
-                }
+                },
+                showMoney = moneyPreferences.showMoney,
+                hourlyWage = moneyPreferences.hourlyWage
             )
             shiftsRecyclerView.apply {
                 layoutManager = LinearLayoutManager(context)
@@ -335,7 +498,9 @@ class HomeFragment : Fragment() {
                         subtitle = shift.workstationName ?: "Shift"
                     }
                     subtitle
-                }
+                },
+                showMoney = moneyPreferences.showMoney,
+                hourlyWage = moneyPreferences.hourlyWage
             )
             availableShiftsRecyclerView.apply {
                 layoutManager = LinearLayoutManager(context)
@@ -473,6 +638,7 @@ class HomeFragment : Fragment() {
         val dialogTitle = dialog.findViewById<TextView>(R.id.dialogTitle)
         val shiftsContainer = dialog.findViewById<LinearLayout>(R.id.shiftsContainer)
         val closeButton = dialog.findViewById<View>(R.id.closeButton)
+        // estimatedMoneyText was removed from layout
 
         var titleText = customTitle ?: "Shift Details"
         var hideCoworkersForMyShifts = isNested
@@ -506,6 +672,7 @@ class HomeFragment : Fragment() {
         }
 
         dialogTitle.text = titleText
+        
         shiftsContainer.removeAllViews()
 
         sortedMyShifts.forEach { shift ->
@@ -651,225 +818,242 @@ class HomeFragment : Fragment() {
 
         val shiftDateTime = cardView.findViewById<TextView>(R.id.shiftDateTime)
         val shiftPosition = cardView.findViewById<TextView>(R.id.shiftPosition)
-                val postedByText = cardView.findViewById<TextView>(R.id.postedByText)
-                val coworkersHeaderWrapper = cardView.findViewById<View>(R.id.coworkersHeaderWrapper)
-                val expandCoworkersButton = cardView.findViewById<View>(R.id.expandCoworkersButton)
-                val shareCoworkersButton = cardView.findViewById<View>(R.id.shareCoworkersButton)
-                val coworkersContainer = cardView.findViewById<LinearLayout>(R.id.coworkersContainer)
-                val chartScrollView = cardView.findViewById<android.widget.HorizontalScrollView>(R.id.coworkersChartScrollView)
-                val chartContainer = cardView.findViewById<RelativeLayout>(R.id.coworkersChartContainer)
-                val pickupAttemptsText = cardView.findViewById<TextView>(R.id.pickupAttemptsText)
-                val pickupRequestsContainer = cardView.findViewById<LinearLayout>(R.id.pickupRequestsContainer)
-                val shiftLocation = cardView.findViewById<TextView>(R.id.shiftLocation)
-                val actionButton = cardView.findViewById<com.google.android.material.button.MaterialButton>(R.id.cardActionButton)
+        val cardMoneyText = cardView.findViewById<TextView>(R.id.cardMoneyText)
+        val postedByText = cardView.findViewById<TextView>(R.id.postedByText)
+        val coworkersHeaderWrapper = cardView.findViewById<View>(R.id.coworkersHeaderWrapper)
+        val expandCoworkersButton = cardView.findViewById<View>(R.id.expandCoworkersButton)
+        val shareCoworkersButton = cardView.findViewById<View>(R.id.shareCoworkersButton)
+        val coworkersContainer = cardView.findViewById<LinearLayout>(R.id.coworkersContainer)
+        val chartScrollView = cardView.findViewById<android.widget.HorizontalScrollView>(R.id.coworkersChartScrollView)
+        val chartContainer = cardView.findViewById<RelativeLayout>(R.id.coworkersChartContainer)
+        val pickupAttemptsText = cardView.findViewById<TextView>(R.id.pickupAttemptsText)
+        val pickupRequestsContainer = cardView.findViewById<LinearLayout>(R.id.pickupRequestsContainer)
+        val shiftLocation = cardView.findViewById<TextView>(R.id.shiftLocation)
+        val actionButton = cardView.findViewById<com.google.android.material.button.MaterialButton>(R.id.cardActionButton)
         
-                try {
-                    val startDateTime = LocalDateTime.parse(shift.startDateTime)
-                    val endDateTime = LocalDateTime.parse(shift.endDateTime)
-                    val dayFormatter = DateTimeFormatter.ofPattern("E M/d")
-                    val timeFormatter = DateTimeFormatter.ofPattern("h:mma")
-                    shiftDateTime.text = "${startDateTime.format(dayFormatter)} ${startDateTime.format(timeFormatter)} - ${endDateTime.format(timeFormatter)}"
-                } catch (e: Exception) {
-                    shiftDateTime.text = "Unknown date"
+        try {
+            val startDateTime = LocalDateTime.parse(shift.startDateTime)
+            val endDateTime = LocalDateTime.parse(shift.endDateTime)
+            val dayFormatter = DateTimeFormatter.ofPattern("E M/d")
+            val timeFormatter = DateTimeFormatter.ofPattern("h:mma")
+            shiftDateTime.text = "${startDateTime.format(dayFormatter)} ${startDateTime.format(timeFormatter)} - ${endDateTime.format(timeFormatter)}"
+            
+            // Calculate money for THIS shift
+            if (moneyPreferences.showMoney && moneyPreferences.hourlyWage > 0) {
+                // Show only if it's My Shift or Available shift
+                if (shift.employeeId == authManager.getUserId() || isAvailable) {
+                    val duration = java.time.Duration.between(startDateTime, endDateTime).toMinutes() / 60.0
+                    val money = duration * moneyPreferences.hourlyWage
+                    cardMoneyText.text = String.format("$%.2f", money)
+                    cardMoneyText.visibility = View.VISIBLE
+                } else {
+                    cardMoneyText.visibility = View.GONE
                 }
+            } else {
+                cardMoneyText.visibility = View.GONE
+            }
+        } catch (e: Exception) {
+            shiftDateTime.text = "Unknown date"
+            cardMoneyText.visibility = View.GONE
+        }
         
-                val workstationId = shift.workstationId ?: shift.workstationCode ?: ""
-                val workstationName = getWorkstationDisplayName(workstationId, shift.workstationName)
-                shiftPosition.text = workstationName
+        val workstationId = shift.workstationId ?: shift.workstationCode ?: ""
+        val workstationName = getWorkstationDisplayName(workstationId, shift.workstationName)
+        shiftPosition.text = workstationName
         
-                if (isAvailable) {
-                    val trackItem = scheduleData?.track?.find { it.primaryShiftRequest?.shift?.shiftId == shift.shiftId && it.primaryShiftRequest?.state == "AVAILABLE" }
-                    if (trackItem != null) {
-                        val requester = trackItem.primaryShiftRequest
-                        if (requester != null) {
-                            postedByText.text = "Posted by ${getEmployeeName(requester.requesterId)} ${getTimeAgo(requester.requestedAt)}"
-                            postedByText.visibility = View.VISIBLE
-                        }
-        
-                        val myPickupRequest = trackItem.relatedShiftRequests?.find { it.requesterId == authManager.getUserId() }
-                        if (myPickupRequest != null && (myPickupRequest.state == "PENDING" || myPickupRequest.state == "APPROVED")) {
-                            postedByText.text = "Status: Pickup Requested"
-                            postedByText.visibility = View.VISIBLE
-                            actionButton.visibility = View.VISIBLE
-                            actionButton.text = "Cancel Pickup"
-                            actionButton.setBackgroundColor(resources.getColor(android.R.color.holo_red_dark, null))
-                            actionButton.setOnClickListener {
-                                showConfirmationDialog("Cancel Pickup", "Are you sure you want to cancel your pickup request?") {
-                                    performCancelPickup(myPickupRequest.requestId, shift)
-                                }
-                            }
-                        } else {
-                            actionButton.visibility = View.VISIBLE
-                            actionButton.text = "Pick Up"
-                            actionButton.setBackgroundColor(resources.getColor(R.color.work_day_green, null))
-                            actionButton.setOnClickListener {
-                                showConfirmationDialog("Pick Up Shift", "Are you sure you want to pick up this shift?") {
-                                    performPickup(shift, trackItem.primaryShiftRequest?.requestId)
-                                }
-                            }
+        if (isAvailable) {
+            val trackItem = scheduleData?.track?.find { it.primaryShiftRequest?.shift?.shiftId == shift.shiftId && it.primaryShiftRequest?.state == "AVAILABLE" }
+            if (trackItem != null) {
+                val requester = trackItem.primaryShiftRequest
+                if (requester != null) {
+                    postedByText.text = "Posted by ${getEmployeeName(requester.requesterId)} ${getTimeAgo(requester.requestedAt)}"
+                    postedByText.visibility = View.VISIBLE
+                }
+
+                val myPickupRequest = trackItem.relatedShiftRequests?.find { it.requesterId == authManager.getUserId() }
+                if (myPickupRequest != null && (myPickupRequest.state == "PENDING" || myPickupRequest.state == "APPROVED")) {
+                    postedByText.text = "Status: Pickup Requested"
+                    postedByText.visibility = View.VISIBLE
+                    actionButton.visibility = View.VISIBLE
+                    actionButton.text = "Cancel Pickup"
+                    actionButton.setBackgroundColor(resources.getColor(android.R.color.holo_red_dark, null))
+                    actionButton.setOnClickListener {
+                        showConfirmationDialog("Cancel Pickup", "Are you sure you want to cancel your pickup request?") {
+                            performCancelPickup(myPickupRequest.requestId, shift)
                         }
                     }
                 } else {
-                    val isFuture = try { LocalDateTime.parse(shift.startDateTime).isAfter(LocalDateTime.now()) } catch (e: Exception) { true }
-                    if (isFuture) {
-                        val latestActivePost = scheduleData?.track?.filter {
-                            it.primaryShiftRequest?.shift?.shiftId == shift.shiftId &&
-                            it.primaryShiftRequest?.state == "AVAILABLE"
-                        }?.maxByOrNull { it.primaryShiftRequest?.requestedAt ?: "" }
-        
-                        if (latestActivePost != null) {
-                            postedByText.text = "Status: Posted for Pickup"
-                            postedByText.visibility = View.VISIBLE
-                            
-                            if (latestActivePost.primaryShiftRequest?.requesterId == authManager.getUserId()) {
-                                actionButton.visibility = View.VISIBLE
-                                actionButton.text = "Cancel Post"
-                                actionButton.setBackgroundColor(resources.getColor(android.R.color.holo_red_dark, null))
-                                actionButton.setOnClickListener {
-                                    showConfirmationDialog("Cancel Post", "Are you sure you want to cancel this post?") {
-                                        performCancelPost(latestActivePost.primaryShiftRequest?.requestId, shift)
-                                    }
-                                }
-                            } else {
-                                actionButton.visibility = View.GONE
-                            }
-                        } else {
-                            if (shift.employeeId == authManager.getUserId()) {
-                                actionButton.visibility = View.VISIBLE
-                                actionButton.text = "Post"
-                                actionButton.setBackgroundColor(resources.getColor(R.color.work_day_green, null))
-                                actionButton.setOnClickListener {
-                                    showConfirmationDialog("Post Shift", "Are you sure you want to post your shift?") {
-                                        performPostShift(shift)
-                                    }
-                                }
-                            } else {
-                                actionButton.visibility = View.GONE
-                            }
+                    actionButton.visibility = View.VISIBLE
+                    actionButton.text = "Pick Up"
+                    actionButton.setBackgroundColor(resources.getColor(R.color.work_day_green, null))
+                    actionButton.setOnClickListener {
+                        showConfirmationDialog("Pick Up Shift", "Are you sure you want to pick up this shift?") {
+                            performPickup(shift, trackItem.primaryShiftRequest?.requestId)
                         }
                     }
                 }
-        
-                // Coworkers Chart Loading
-                if (!hideCoworkers && shift.cafeNumber != null && shift.companyCode != null &&
-                    shift.startDateTime != null && shift.endDateTime != null) {
-        
-                    val shiftId = shift.shiftId ?: "${shift.startDateTime}-${shift.workstationId ?: shift.workstationCode}"
-                    
-                    // Function to update chart
-                    fun updateChart(teamMembers: List<TeamMember>) {
-                        val myId = authManager.getUserId()
-                        
-                        // Merge all shifts for complete view (Me + Available + Team)
-                        val myShifts = scheduleData?.currentShifts ?: emptyList()
-                        val availableTracks = scheduleData?.track ?: emptyList()
-                        val employeeInfo = scheduleData?.employeeInfo ?: emptyList()
-                        
-                        // Reuse merge logic (locally implemented)
-                        val mergedMembers = mergeData(teamMembers, myShifts, availableTracks, employeeInfo)
-                        
-                        val coworkerShifts = findCoworkerShifts(shift, mergedMembers, myId)
-                        
-                        if (coworkerShifts.isNotEmpty()) {
-                            coworkersHeaderWrapper.visibility = View.VISIBLE
-                            coworkersContainer.visibility = View.GONE // Legacy
-                            chartScrollView.visibility = View.VISIBLE
-                            
-                            shareCoworkersButton.setOnClickListener {
-                                val dateStr = try {
-                                    val s = LocalDateTime.parse(shift.startDateTime)
-                                    s.format(DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy"))
-                                } catch (e: Exception) { "Schedule" }
-                                
-                                val workstationId = shift.workstationId ?: shift.workstationCode ?: ""
-                                val workstationName = getWorkstationDisplayName(workstationId, shift.workstationName)
-                                
-                                val owner = if (isAvailable) "Available Shift" else {
-                                    val name = getEmployeeName(shift.employeeId)
-                                    if (shift.employeeId == authManager.getUserId()) "${authManager.getFirstName()} ${authManager.getLastName()}" else name
-                                }
-                                val subHeader = "$workstationName - $owner"
-                                
-                                com.anonymousassociate.betterpantry.utils.ShareUtil.shareView(requireContext(), chartContainer, "Share Schedule", headerText = dateStr, subHeaderText = subHeader)
-                            }
-                            
-                            val daySchedule = DaySchedule(LocalDate.now(), coworkerShifts)
-                            val shiftStart = try { LocalDateTime.parse(shift.startDateTime) } catch(e: Exception) { null }
-                            val shiftEnd = try { LocalDateTime.parse(shift.endDateTime) } catch(e: Exception) { null }
-                            
-                            chartScrollView.post {
-                                val width = chartScrollView.width
-                                val safeWidth = if (width > 0) width else resources.displayMetrics.widthPixels - 110.dpToPx() // Approx padding (16+20+16 = 52 * 2 = 104)
-        
-                                ChartRenderer.drawChart(
-                                    requireContext(),
-                                    chartContainer,
-                                    daySchedule,
-                                    isExpanded = false,
-                                    containerWidth = safeWidth,
-                                    fixedStartTime = shiftStart,
-                                    fixedEndTime = shiftEnd,
-                                    listener = object : ScheduleInteractionListener {
-                                        override fun onExpandClick(day: DaySchedule) {}
-                                        override fun onShiftClick(clickedShift: EnrichedShift) {
-                                            // Recursion logic
-                                            if (clickedShift.shift.shiftId != shift.shiftId?.toLongOrNull()) {
-                                                val newShift = clickedShift.shift.toShift()
-                                                val title = if (clickedShift.isAvailable) {
-                                                    "Available Shift"
-                                                } else {
-                                                    "${clickedShift.firstName} ${clickedShift.lastName ?: ""}".trim()
-                                                }
-                                                if (clickedShift.isAvailable) {
-                                                     showShiftDetailDialog(emptyList(), listOf(newShift), customTitle = title, isNested = true)
-                                                } else {
-                                                     showShiftDetailDialog(listOf(newShift), emptyList(), customTitle = title, isNested = true)
-                                                }
-                                            }
-                                        }
-                                    },
-                                    fitToWidth = true
-                                )
-                            }
-        
-                            expandCoworkersButton.setOnClickListener {
-                                val day = try { LocalDate.parse(shift.startDateTime?.substring(0, 10)) } catch (e: Exception) { LocalDate.now() }
-                                val allShiftsForDay = mutableListOf<EnrichedShift>()
-                                
-                                mergedMembers.forEach { tm ->
-                                    val isMe = tm.associate?.employeeId == myId
-                                    val isAvailable = tm.associate?.employeeId == "AVAILABLE_SHIFT"
-                                    val firstName = if (!tm.associate?.preferredName.isNullOrEmpty()) tm.associate?.preferredName ?: "Unknown" else tm.associate?.firstName ?: "Unknown"
-                                    val lastName = tm.associate?.lastName
-                                    
-                                    tm.shifts?.forEach { s ->
-                                        try {
-                                            if (s.startDateTime?.startsWith(day.toString()) == true) {
-                                                val cafeInfo = scheduleData?.cafeList?.firstOrNull { 
-                                                    it.departmentName?.contains(s.cafeNumber ?: "") == true 
-                                                } ?: scheduleData?.cafeList?.firstOrNull()
-                                                
-                                                val location = cafeInfo?.let { cafe ->
-                                                    val address = cafe.address
-                                                    "#${s.cafeNumber ?: ""} - ${address?.addressLine ?: ""}, ${address?.city ?: ""}, ${address?.state ?: ""}"
-                                                } ?: "#${s.cafeNumber ?: ""}"
+            }
+        } else {
+            val isFuture = try { LocalDateTime.parse(shift.startDateTime).isAfter(LocalDateTime.now()) } catch (e: Exception) { true }
+            if (isFuture) {
+                val latestActivePost = scheduleData?.track?.filter {
+                    it.primaryShiftRequest?.shift?.shiftId == shift.shiftId &&
+                    it.primaryShiftRequest?.state == "AVAILABLE"
+                }?.maxByOrNull { it.primaryShiftRequest?.requestedAt ?: "" }
 
-                                                allShiftsForDay.add(
-                                                    EnrichedShift(
-                                                        shift = s,
-                                                        firstName = firstName,
-                                                        lastName = lastName,
-                                                        isMe = isMe,
-                                                        isAvailable = isAvailable,
-                                                        location = location
-                                                    )
-                                                )
-                                            }
-                                        } catch(e: Exception) {}
+                if (latestActivePost != null) {
+                    postedByText.text = "Status: Posted for Pickup"
+                    postedByText.visibility = View.VISIBLE
+                    
+                    if (latestActivePost.primaryShiftRequest?.requesterId == authManager.getUserId()) {
+                        actionButton.visibility = View.VISIBLE
+                        actionButton.text = "Cancel Post"
+                        actionButton.setBackgroundColor(resources.getColor(android.R.color.holo_red_dark, null))
+                        actionButton.setOnClickListener {
+                            showConfirmationDialog("Cancel Post", "Are you sure you want to cancel this post?") {
+                                performCancelPost(latestActivePost.primaryShiftRequest?.requestId, shift)
+                            }
+                        }
+                    } else {
+                        actionButton.visibility = View.GONE
+                    }
+                } else {
+                    if (shift.employeeId == authManager.getUserId()) {
+                        actionButton.visibility = View.VISIBLE
+                        actionButton.text = "Post"
+                        actionButton.setBackgroundColor(resources.getColor(R.color.work_day_green, null))
+                        actionButton.setOnClickListener {
+                            showConfirmationDialog("Post Shift", "Are you sure you want to post your shift?") {
+                                performPostShift(shift)
+                            }
+                        }
+                    } else {
+                        actionButton.visibility = View.GONE
+                    }
+                }
+            }
+        }
+
+        // Coworkers Chart Loading
+        if (!hideCoworkers && shift.cafeNumber != null && shift.companyCode != null &&
+            shift.startDateTime != null && shift.endDateTime != null) {
+
+            val shiftId = shift.shiftId ?: "${shift.startDateTime}-${shift.workstationId ?: shift.workstationCode}"
+            
+            // Function to update chart
+            fun updateChart(teamMembers: List<TeamMember>) {
+                val myId = authManager.getUserId()
+                
+                // Merge all shifts for complete view (Me + Available + Team)
+                val myShifts = scheduleData?.currentShifts ?: emptyList()
+                val availableTracks = scheduleData?.track ?: emptyList()
+                val employeeInfo = scheduleData?.employeeInfo ?: emptyList()
+                
+                // Reuse merge logic (locally implemented)
+                val mergedMembers = mergeData(teamMembers, myShifts, availableTracks, employeeInfo)
+                
+                val coworkerShifts = findCoworkerShifts(shift, mergedMembers, myId)
+                
+                if (coworkerShifts.isNotEmpty()) {
+                    coworkersHeaderWrapper.visibility = View.VISIBLE
+                    coworkersContainer.visibility = View.GONE // Legacy
+                    chartScrollView.visibility = View.VISIBLE
+                    
+                    shareCoworkersButton.setOnClickListener {
+                        val dateStr = try {
+                            val s = LocalDateTime.parse(shift.startDateTime)
+                            s.format(DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy"))
+                        } catch (e: Exception) { "Schedule" }
+                        
+                        val workstationId = shift.workstationId ?: shift.workstationCode ?: ""
+                        val workstationName = getWorkstationDisplayName(workstationId, shift.workstationName)
+                        
+                        val owner = if (isAvailable) "Available Shift" else {
+                            val name = getEmployeeName(shift.employeeId)
+                            if (shift.employeeId == authManager.getUserId()) "${authManager.getFirstName()} ${authManager.getLastName()}" else name
+                        }
+                        val subHeader = "$workstationName - $owner"
+                        
+                        com.anonymousassociate.betterpantry.utils.ShareUtil.shareView(requireContext(), chartContainer, "Share Schedule", headerText = dateStr, subHeaderText = subHeader)
+                    }
+                    
+                    val daySchedule = DaySchedule(LocalDate.now(), coworkerShifts)
+                    val shiftStart = try { LocalDateTime.parse(shift.startDateTime) } catch(e: Exception) { null }
+                    val shiftEnd = try { LocalDateTime.parse(shift.endDateTime) } catch(e: Exception) { null }
+                    
+                    chartScrollView.post {
+                        val width = chartScrollView.width
+                        val safeWidth = if (width > 0) width else resources.displayMetrics.widthPixels - 110.dpToPx() // Approx padding (16+20+16 = 52 * 2 = 104)
+
+                        ChartRenderer.drawChart(
+                            requireContext(),
+                            chartContainer,
+                            daySchedule,
+                            isExpanded = false,
+                            containerWidth = safeWidth,
+                            fixedStartTime = shiftStart,
+                            fixedEndTime = shiftEnd,
+                            listener = object : ScheduleInteractionListener {
+                                override fun onExpandClick(day: DaySchedule) {}
+                                override fun onShiftClick(clickedShift: EnrichedShift) {
+                                    // Recursion logic
+                                    if (clickedShift.shift.shiftId != shift.shiftId?.toLongOrNull()) {
+                                        val newShift = clickedShift.shift.toShift()
+                                        val title = if (clickedShift.isAvailable) {
+                                            "Available Shift"
+                                        } else {
+                                            "${clickedShift.firstName} ${clickedShift.lastName ?: ""}".trim()
+                                        }
+                                        if (clickedShift.isAvailable) {
+                                             showShiftDetailDialog(emptyList(), listOf(newShift), customTitle = title, isNested = true)
+                                        } else {
+                                             showShiftDetailDialog(listOf(newShift), emptyList(), customTitle = title, isNested = true)
+                                        }
                                     }
                                 }
-                                
-                                                        showDayScheduleDialog(DaySchedule(day, allShiftsForDay.sortedBy { it.shift.startDateTime }), shift)
+                            },
+                            fitToWidth = true
+                        )
+                    }
+
+                    expandCoworkersButton.setOnClickListener {
+                        val day = try { LocalDate.parse(shift.startDateTime?.substring(0, 10)) } catch (e: Exception) { LocalDate.now() }
+                        val allShiftsForDay = mutableListOf<EnrichedShift>()
+                        
+                        mergedMembers.forEach { tm ->
+                            val isMe = tm.associate?.employeeId == myId
+                            val isAvailable = tm.associate?.employeeId == "AVAILABLE_SHIFT"
+                            val firstName = if (!tm.associate?.preferredName.isNullOrEmpty()) tm.associate?.preferredName ?: "Unknown" else tm.associate?.firstName ?: "Unknown"
+                            val lastName = tm.associate?.lastName
+                            
+                            tm.shifts?.forEach { s ->
+                                try {
+                                    if (s.startDateTime?.startsWith(day.toString()) == true) {
+                                        val cafeInfo = scheduleData?.cafeList?.firstOrNull { 
+                                            it.departmentName?.contains(s.cafeNumber ?: "") == true 
+                                        } ?: scheduleData?.cafeList?.firstOrNull()
+                                        
+                                        val location = cafeInfo?.let { cafe ->
+                                            val address = cafe.address
+                                            "#${s.cafeNumber ?: ""} - ${address?.addressLine ?: ""}, ${address?.city ?: ""}, ${address?.state ?: ""}"
+                                        } ?: "#${s.cafeNumber ?: ""}"
+
+                                        allShiftsForDay.add(
+                                            EnrichedShift(
+                                                shift = s,
+                                                firstName = firstName,
+                                                lastName = lastName,
+                                                isMe = isMe,
+                                                isAvailable = isAvailable,
+                                                location = location
+                                            )
+                                        )
+                                    }
+                                } catch(e: Exception) {}
+                            }
+                        }
+                        
+                        showDayScheduleDialog(DaySchedule(day, allShiftsForDay.sortedBy { it.shift.startDateTime }), shift)
                     }
                 }
             }
@@ -879,35 +1063,35 @@ class HomeFragment : Fragment() {
                 updateChart(cachedMembers)
             }
         
-                    lifecycleScope.launch {
-                        try {
-                                                val startOfDay = LocalDateTime.parse(shift.startDateTime)
-                                                    .with(java.time.LocalTime.MIN)
-                                                    .format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
-                                                
-                                                val endOfDay = LocalDateTime.parse(shift.startDateTime)
-                                                    .with(java.time.LocalTime.MAX)
-                                                    .format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
-                            
-                                                val teamMembers = apiService.getTeamMembers(
-                                                    shift.cafeNumber,
-                                                    shift.companyCode,
-                                                    startOfDay,
-                                                    endOfDay
-                                                )        
-                            if (teamMembers != null) {
-                                scheduleCache.saveTeamMembers(shiftId, teamMembers)
-                                updateChart(teamMembers)
-                            }
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                        }
+            lifecycleScope.launch {
+                try {
+                    val startOfDay = LocalDateTime.parse(shift.startDateTime)
+                        .with(java.time.LocalTime.MIN)
+                        .format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+                    
+                    val endOfDay = LocalDateTime.parse(shift.startDateTime)
+                        .with(java.time.LocalTime.MAX)
+                        .format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+
+                    val teamMembers = apiService.getTeamMembers(
+                        shift.cafeNumber,
+                        shift.companyCode,
+                        startOfDay,
+                        endOfDay
+                    )        
+                    if (teamMembers != null) {
+                        scheduleCache.saveTeamMembers(shiftId, teamMembers)
+                        updateChart(teamMembers)
                     }
-                } else {
-                    coworkersHeaderWrapper.visibility = View.GONE
-                    coworkersContainer.visibility = View.GONE
-                    chartScrollView.visibility = View.GONE
+                } catch (e: Exception) {
+                    e.printStackTrace()
                 }
+            }
+        } else {
+            coworkersHeaderWrapper.visibility = View.GONE
+            coworkersContainer.visibility = View.GONE
+            chartScrollView.visibility = View.GONE
+        }
 
         if (isAvailable) {
             val trackItem = scheduleData?.track?.find { it.primaryShiftRequest?.shift?.shiftId == shift.shiftId && it.primaryShiftRequest?.state == "AVAILABLE" }
@@ -1352,7 +1536,6 @@ class HomeFragment : Fragment() {
         val list = infoList ?: scheduleData?.employeeInfo
         val employee = list?.find { it.employeeId == employeeId }
         if (employee != null) {
-            // EmployeeInfo doesn't have preferredName, so no debug print needed here for preferred name usage
             return "${employee.firstName ?: ""} ${employee.lastName ?: ""}".trim().ifEmpty { "Unknown" }
         }
         

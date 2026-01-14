@@ -13,7 +13,9 @@ import java.time.format.DateTimeFormatter
 class ShiftAdapter(
     val shifts: List<Shift>,
     private val onShiftClick: ((Shift) -> Unit)? = null,
-    private val subtitleProvider: ((Shift) -> String)? = null
+    private val subtitleProvider: ((Shift) -> String)? = null,
+    private val showMoney: Boolean = false,
+    private val hourlyWage: Float = 0f
 ) : RecyclerView.Adapter<ShiftAdapter.ShiftViewHolder>() {
 
     private val customNames = mapOf(
@@ -67,6 +69,7 @@ class ShiftAdapter(
     inner class ShiftViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         private val shiftDateText: TextView = itemView.findViewById(R.id.shiftDateText)
         private val shiftLocationText: TextView = itemView.findViewById(R.id.shiftLocationText)
+        private val shiftMoneyText: TextView = itemView.findViewById(R.id.shiftMoneyText)
 
         init {
             // Set click listener on the card view to ensure clicks are captured
@@ -135,9 +138,20 @@ class ShiftAdapter(
                     shiftLocationText.text = "$name - $durationStr"
                 }
 
+                if (showMoney && hourlyWage > 0) {
+                    val duration = java.time.Duration.between(startDateTime, endDateTime)
+                    val hours = duration.toMinutes() / 60.0
+                    val earnings = hours * hourlyWage
+                    shiftMoneyText.text = String.format("$%.2f", earnings)
+                    shiftMoneyText.visibility = View.VISIBLE
+                } else {
+                    shiftMoneyText.visibility = View.GONE
+                }
+
             } catch (e: Exception) {
                 shiftDateText.text = "Unknown date"
                 shiftLocationText.text = shift.workstationName ?: "Shift"
+                shiftMoneyText.visibility = View.GONE
                 e.printStackTrace()
             }
         }

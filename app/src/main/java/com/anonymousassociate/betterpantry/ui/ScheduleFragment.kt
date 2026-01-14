@@ -117,9 +117,10 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
 
     private fun loadScheduleData(forceRefresh: Boolean = false) {
         val isStale = scheduleCache.isScheduleStale()
+        val isTeamStale = scheduleCache.isTeamScheduleStale()
         val hasTeamData = scheduleCache.getTeamSchedule() != null
 
-        if (!forceRefresh && !isStale && scheduleData != null && hasTeamData) {
+        if (!forceRefresh && !isStale && !isTeamStale && scheduleData != null && hasTeamData) {
             swipeRefreshLayout.isRefreshing = false
             return
         }
@@ -185,7 +186,7 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
         
         val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss")
         val startStr = LocalDateTime.now().withHour(0).withMinute(0).withSecond(0).format(formatter)
-        val endStr = LocalDateTime.now().plusDays(14).withHour(23).withMinute(59).withSecond(59).format(formatter)
+        val endStr = LocalDateTime.now().plusDays(30).withHour(23).withMinute(59).withSecond(59).format(formatter)
 
         val teamMembers = try {
             apiService.getTeamMembers(cafeNo, companyCode, startStr, endStr)
@@ -954,7 +955,7 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
             override fun run() {
                 updateTimestamp()
                 
-                if (scheduleCache.isScheduleStale()) {
+                if (scheduleCache.isScheduleStale() || scheduleCache.isTeamScheduleStale()) {
                     loadScheduleData()
                 }
                 

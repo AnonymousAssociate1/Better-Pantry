@@ -1358,14 +1358,16 @@ class NotificationsFragment : Fragment() {
                 lifecycleScope.launch {
                     try {
                         val response = apiService.getNotifications(size = 100)
-                        val fetched = response?.content ?: emptyList()
-                        allNotifications = fetched.sortedByDescending { it.createDateTime }
-                        scheduleCache.saveNotifications(allNotifications)
-                        hasLoaded = true
-                        updateList()
+                        if (response != null) {
+                            val fetched = response.content ?: emptyList()
+                            allNotifications = fetched.sortedByDescending { it.createDateTime }
+                            scheduleCache.saveNotifications(allNotifications)
+                            hasLoaded = true
+                            updateList()
 
-                        val count = allNotifications.count { it.read == false }
-                        (requireActivity() as? MainActivity)?.updateNotificationBadge(count)
+                            val count = allNotifications.count { it.read == false }
+                            (requireActivity() as? MainActivity)?.updateNotificationBadge(count)
+                        }
                     } catch (e: Exception) {
                         e.printStackTrace()
                     } finally {

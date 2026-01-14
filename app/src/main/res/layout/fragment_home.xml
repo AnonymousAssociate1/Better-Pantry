@@ -29,6 +29,19 @@
                 android:paddingHorizontal="16dp"
                 android:layout_marginBottom="8dp">
 
+                <ImageButton
+                    android:id="@+id/moneyButton"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:src="@drawable/money_bag_24px"
+                    android:scaleType="centerInside"
+                    android:contentDescription="Pay Settings"
+                    android:tint="@color/text_primary"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintTop_toTopOf="@id/updatedText"
+                    app:layout_constraintBottom_toBottomOf="@id/titleText" />
+
                 <TextView
                     android:id="@+id/updatedText"
                     android:layout_width="wrap_content"
