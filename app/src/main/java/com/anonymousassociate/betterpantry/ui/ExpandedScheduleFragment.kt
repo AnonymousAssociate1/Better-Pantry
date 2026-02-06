@@ -22,7 +22,7 @@ import java.time.format.DateTimeFormatter
 class ExpandedScheduleFragment : DialogFragment() {
 
     private lateinit var authManager: AuthManager
-    private lateinit var apiService: PantryApiService
+    private val repository by lazy { (requireActivity() as com.anonymousassociate.betterpantry.MainActivity).repository }
 
     companion object {
         var tempDaySchedule: DaySchedule? = null
@@ -59,7 +59,7 @@ class ExpandedScheduleFragment : DialogFragment() {
         super.onViewCreated(view, savedInstanceState)
 
         authManager = AuthManager(requireContext())
-        apiService = PantryApiService(authManager)
+        // repository initialized via lazy
 
         val day = tempDaySchedule ?: return
 
@@ -321,7 +321,7 @@ class ExpandedScheduleFragment : DialogFragment() {
                     put("receiveAssociate", receiveAssociate)
                 }
 
-                val success = apiService.acceptShiftPickup(payload.toString())
+                val success = repository.acceptShiftPickup(payload.toString())
                 if (success) {
                     dialog.dismiss()
                     parentFragmentManager.popBackStack() // Go back to refresh
@@ -350,7 +350,7 @@ class ExpandedScheduleFragment : DialogFragment() {
                     put("giveAssociate", giveAssociate)
                 }
 
-                val responseCode = apiService.cancelPostShift(payload.toString())
+                val responseCode = repository.cancelPostShift(payload.toString())
                 if (responseCode in 200..299) {
                     dialog.dismiss()
                     parentFragmentManager.popBackStack() // Go back to refresh

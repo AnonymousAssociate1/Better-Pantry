@@ -35,8 +35,8 @@ import java.time.temporal.ChronoUnit
 class ScheduleFragment : Fragment(), ScheduleInteractionListener {
 
     private lateinit var authManager: AuthManager
-    private lateinit var apiService: PantryApiService
-    private lateinit var scheduleCache: ScheduleCache
+    private val repository by lazy { (requireActivity() as com.anonymousassociate.betterpantry.MainActivity).repository }
+    private val scheduleCache by lazy { (requireActivity() as com.anonymousassociate.betterpantry.MainActivity).repository.let { ScheduleCache(requireContext()) } }
     private lateinit var recyclerView: RecyclerView
     private lateinit var loadingText: TextView
     private lateinit var updatedText: TextView
@@ -64,8 +64,7 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
         super.onViewCreated(view, savedInstanceState)
 
         authManager = AuthManager(requireContext())
-        apiService = PantryApiService(authManager)
-        scheduleCache = ScheduleCache(requireContext())
+        // apiService and scheduleCache from repository logic
 
         recyclerView = view.findViewById(R.id.scheduleRecyclerView)
         loadingText = view.findViewById(R.id.loadingText)
@@ -115,7 +114,22 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
         stopUpdateTimer()
     }
 
+    fun refreshDataFromCache() {
+        if (!isAdded) return
+        val cachedSchedule = scheduleCache.getSchedule()
+        if (cachedSchedule != null) {
+            scheduleData = cachedSchedule
+            // Assume we also want to display it
+            val cachedTeam = scheduleCache.getTeamSchedule()
+            displayScheduleFromData(cachedSchedule, cachedTeam)
+            updateTimestamp()
+        }
+    }
+
     private fun loadScheduleData(forceRefresh: Boolean = false) {
+        // Try cache first
+        refreshDataFromCache()
+
         val isStale = scheduleCache.isScheduleStale()
         val isTeamStale = scheduleCache.isTeamScheduleStale()
         val hasTeamData = scheduleCache.getTeamSchedule() != null
@@ -136,20 +150,14 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
         
         lifecycleScope.launch {
             try {
-                // Update from Network
-                // If schedule is fresh (not stale) and we have it, reuse it. Otherwise fetch.
-                val mySchedule = if (!isStale && scheduleData != null) {
-                    scheduleData
-                } else {
-                    try { apiService.getSchedule(30) } catch(e: Exception) { null }
-                }
+                // Update from Network via Repository
+                val mySchedule = repository.getSchedule(forceRefresh) // Handles caching
 
                 if (mySchedule != null) {
-                    scheduleCache.saveSchedule(mySchedule)
                     scheduleData = mySchedule
                     if (isAdded) updateTimestamp()
                     
-                    fetchTeamMembers(mySchedule)
+                    fetchTeamMembers(mySchedule, forceRefresh)
                 } else {
                     if (forceRefresh && isAdded) {
                         // Toast?
@@ -174,7 +182,7 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
         }
     }
     
-    private suspend fun fetchTeamMembers(mySchedule: com.anonymousassociate.betterpantry.models.ScheduleData) {
+    private suspend fun fetchTeamMembers(mySchedule: com.anonymousassociate.betterpantry.models.ScheduleData, forceRefresh: Boolean) {
         val sampleShift = mySchedule.currentShifts?.firstOrNull { 
             it.cafeNumber != null && it.companyCode != null 
         }
@@ -189,14 +197,13 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
         val endStr = LocalDateTime.now().plusDays(30).withHour(23).withMinute(59).withSecond(59).format(formatter)
 
         val teamMembers = try {
-            apiService.getTeamMembers(cafeNo, companyCode, startStr, endStr)
+            repository.getTeamMembers(cafeNo, companyCode, startStr, endStr, forceRefresh)
         } catch (e: Exception) {
             e.printStackTrace()
             null
         }
 
         if (teamMembers != null) {
-            scheduleCache.saveTeamSchedule(teamMembers)
             if (isAdded) {
                 displayScheduleFromData(mySchedule, teamMembers)
                 loadingText.visibility = View.GONE
@@ -806,10 +813,10 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
                     put("receiveAssociate", receiveAssociate)
                 }
                 
-                val success = apiService.acceptShiftPickup(payload.toString())
+                val success = repository.acceptShiftPickup(payload.toString())
                 if (success) {
                     dialog.dismiss()
-                    loadScheduleData() // Refresh
+                    loadScheduleData(forceRefresh = true) // Refresh to show update
                 } else {
                     android.widget.Toast.makeText(requireContext(), "Failed to pick up shift", android.widget.Toast.LENGTH_SHORT).show()
                 }
@@ -835,10 +842,10 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
                     put("giveAssociate", giveAssociate)
                 }
                 
-                val responseCode = apiService.cancelPostShift(payload.toString())
+                val responseCode = repository.cancelPostShift(payload.toString())
                 if (responseCode in 200..299) {
                     dialog.dismiss()
-                    loadScheduleData()
+                    loadScheduleData(forceRefresh = true)
                 } else {
                      android.widget.Toast.makeText(requireContext(), "Failed to cancel (Code: $responseCode)", android.widget.Toast.LENGTH_SHORT).show()
                 }

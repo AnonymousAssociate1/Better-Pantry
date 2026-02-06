@@ -33,8 +33,8 @@ import java.time.temporal.TemporalAdjusters
 class PeerScheduleFragment : Fragment() {
 
     private lateinit var authManager: AuthManager
-    private lateinit var apiService: PantryApiService
-    private lateinit var scheduleCache: ScheduleCache
+    private val repository by lazy { (requireActivity() as com.anonymousassociate.betterpantry.MainActivity).repository }
+    private val scheduleCache by lazy { (requireActivity() as com.anonymousassociate.betterpantry.MainActivity).repository.let { ScheduleCache(requireContext()) } }
     private lateinit var calendarAdapter: CalendarAdapter
     private lateinit var calendarRecyclerView: RecyclerView
     private lateinit var shiftsRecyclerView: RecyclerView
@@ -75,27 +75,7 @@ class PeerScheduleFragment : Fragment() {
         setupListeners()
         setupCalendar()
 
-        val cachedSchedule = scheduleCache.getSchedule()
-        if (cachedSchedule != null) {
-            val cachedTeam = scheduleCache.getTeamSchedule()
-            if (cachedTeam != null) {
-                // Initialize cached data
-                val myId = authManager.getUserId()
-                val peerShifts = cachedTeam.find { it.associate?.employeeId == peer?.employeeId }?.shifts?.map { it.toShift(peer?.employeeId) } ?: emptyList()
-                val myShifts = cachedTeam.find { it.associate?.employeeId == myId }?.shifts?.map { it.toShift(myId) } ?: emptyList()
-                                            val allPersonalShifts = (peerShifts + myShifts).distinctBy { it.shiftId }.sortedBy { it.startDateTime }
-                                            
-                                            peerScheduleData = ScheduleData(                    currentShifts = allPersonalShifts,
-                    track = cachedSchedule.track,
-                    cafeList = cachedSchedule.cafeList,
-                    employeeInfo = cachedSchedule.employeeInfo
-                )
-                
-                displaySchedule(peerScheduleData!!, peerShifts)
-                updateTimestamp()
-                startUpdateTimer()
-            }
-        }
+        refreshDataFromCache()
 
         loadPeerSchedule()
     }
@@ -107,8 +87,7 @@ class PeerScheduleFragment : Fragment() {
 
     private fun initViews(view: View) {
         authManager = AuthManager(requireContext())
-        apiService = PantryApiService(authManager)
-        scheduleCache = ScheduleCache(requireContext())
+        // apiService and scheduleCache from repository logic
 
         calendarRecyclerView = view.findViewById(R.id.calendarRecyclerView)
         shiftsRecyclerView = view.findViewById(R.id.shiftsRecyclerView)
@@ -202,6 +181,45 @@ class PeerScheduleFragment : Fragment() {
         calendarRecyclerView.adapter = calendarAdapter
     }
 
+    fun refreshDataFromCache() {
+        if (!isAdded) return
+        val cachedSchedule = scheduleCache.getSchedule()
+        if (cachedSchedule != null) {
+            val cachedTeam = scheduleCache.getTeamSchedule()
+            if (cachedTeam != null) {
+                val myId = authManager.getUserId()
+                val peerShifts = cachedTeam.find { it.associate?.employeeId == peer?.employeeId }?.shifts?.map { it.toShift(peer?.employeeId) } ?: emptyList()
+                val myShifts = cachedTeam.find { it.associate?.employeeId == myId }?.shifts?.map { it.toShift(myId) } ?: emptyList()
+                
+                val today = LocalDate.now()
+                val allPersonalShifts = (peerShifts + myShifts)
+                    .distinctBy { it.shiftId }
+                    .filter {
+                        try {
+                            val shiftDate = LocalDateTime.parse(it.startDateTime).toLocalDate()
+                            !shiftDate.isBefore(today)
+                        } catch (e: Exception) { true }
+                    }
+                    .sortedBy { it.startDateTime }
+                                            
+                peerScheduleData = ScheduleData(
+                    currentShifts = allPersonalShifts,
+                    track = cachedSchedule.track,
+                    cafeList = cachedSchedule.cafeList,
+                    employeeInfo = cachedSchedule.employeeInfo
+                )
+                
+                displaySchedule(peerScheduleData!!, peerShifts.filter {
+                    try {
+                        val shiftDate = LocalDateTime.parse(it.startDateTime).toLocalDate()
+                        !shiftDate.isBefore(today)
+                    } catch (e: Exception) { true }
+                })
+                updateTimestamp()
+            }
+        }
+    }
+
     private fun loadPeerSchedule(forceRefresh: Boolean = false) {
         if (!forceRefresh) {
             val lastUpdate = scheduleCache.getLastUpdateTime()
@@ -216,37 +234,22 @@ class PeerScheduleFragment : Fragment() {
         lifecycleScope.launch {
             try {
                 // Always fetch fresh base schedule to get updated Available Shifts and Cafe info
-                val schedule = apiService.getSchedule(30)
+                val schedule = repository.getSchedule(forceRefresh) // Handles caching
+                
                 if (schedule != null) {
-                    scheduleCache.saveSchedule(schedule)
-                    
                     val sampleShift = schedule.currentShifts?.firstOrNull { it.cafeNumber != null && it.companyCode != null }
                     if (sampleShift != null) {
                         val startStr = LocalDateTime.now().withHour(0).withMinute(0).withSecond(0).format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss"))
                         val endStr = LocalDateTime.now().plusDays(30).withHour(23).withMinute(59).withSecond(59).format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss"))
                         
                         val teamMembers = try {
-                            apiService.getTeamMembers(sampleShift.cafeNumber!!, sampleShift.companyCode!!, startStr, endStr)
+                            repository.getTeamMembers(sampleShift.cafeNumber!!, sampleShift.companyCode!!, startStr, endStr, forceRefresh)
                         } catch(e: Exception) { null }
                         
                         if (teamMembers != null) {
-                            scheduleCache.saveTeamSchedule(teamMembers)
                             updateTimestamp()
-                            
-                            // Re-load data from cache to display
-                            val myId = authManager.getUserId()
-                            val peerShifts = teamMembers.find { it.associate?.employeeId == peer?.employeeId }?.shifts?.map { it.toShift(peer?.employeeId) } ?: emptyList()
-                            val myShifts = teamMembers.find { it.associate?.employeeId == myId }?.shifts?.map { it.toShift(myId) } ?: emptyList()
-                            
-                                                        val allPersonalShifts = (peerShifts + myShifts).distinctBy { it.shiftId }.sortedBy { it.startDateTime }
-                                                        
-                                                        peerScheduleData = ScheduleData(                                currentShifts = allPersonalShifts,
-                                track = schedule.track,
-                                cafeList = schedule.cafeList,
-                                employeeInfo = schedule.employeeInfo
-                            )
-
-                            displaySchedule(peerScheduleData!!, peerShifts)
+                            // Refresh UI from newly cached data
+                            refreshDataFromCache()
                             startUpdateTimer()
                         }
                     }

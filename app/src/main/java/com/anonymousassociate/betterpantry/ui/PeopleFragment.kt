@@ -30,8 +30,8 @@ import java.time.format.DateTimeFormatter
 class PeopleFragment : Fragment() {
 
     private lateinit var authManager: AuthManager
-    private lateinit var apiService: PantryApiService
-    private lateinit var scheduleCache: ScheduleCache
+    private val repository by lazy { (requireActivity() as com.anonymousassociate.betterpantry.MainActivity).repository }
+    private val scheduleCache by lazy { (requireActivity() as com.anonymousassociate.betterpantry.MainActivity).repository.let { ScheduleCache(requireContext()) } }
     private lateinit var recyclerView: RecyclerView
     private lateinit var searchBar: EditText
     private lateinit var emptyStateText: TextView
@@ -56,9 +56,8 @@ class PeopleFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
 
         authManager = AuthManager(requireContext())
-        apiService = PantryApiService(authManager)
-        scheduleCache = ScheduleCache(requireContext())
-
+        // apiService and scheduleCache initialized via lazy/local
+        
         recyclerView = view.findViewById(R.id.peopleRecyclerView)
         searchBar = view.findViewById(R.id.searchBar)
         
@@ -187,13 +186,20 @@ class PeopleFragment : Fragment() {
         stopUpdateTimer()
     }
 
+    override fun onResume() {
+        super.onResume()
+        updateTimestamp()
+        loadPeople()
+        startUpdateTimer()
+    }
+
     private fun startUpdateTimer() {
         stopUpdateTimer()
         updateTimeRunnable = object : Runnable {
             override fun run() {
                 updateTimestamp()
                 
-                if (scheduleCache.isTeamRosterStale()) {
+                if (scheduleCache.isTeamScheduleStale()) {
                     loadPeople()
                 }
                 
@@ -258,16 +264,22 @@ class PeopleFragment : Fragment() {
         popup.show()
     }
 
-    private fun loadPeople(forceRefresh: Boolean = false) {
-        // Always try to load from cache first to show something immediately
-        val cachedTeam = scheduleCache.getTeamRoster()
+    fun refreshDataFromCache() {
+        if (!isAdded) return
+        val cachedTeam = scheduleCache.getTeamSchedule() // Unified cache
         val cachedSchedule = scheduleCache.getSchedule()
         if (cachedTeam != null) {
-            processTeamMembers(cachedTeam, cachedSchedule)
+             processTeamMembers(cachedTeam, cachedSchedule)
         }
+        updateTimestamp()
+    }
+
+    private fun loadPeople(forceRefresh: Boolean = false) {
+        // Always try to load from cache first to show something immediately
+        refreshDataFromCache()
 
         if (!forceRefresh) {
-            if (!scheduleCache.isTeamRosterStale() && cachedTeam != null && cachedTeam.isNotEmpty()) {
+            if (!scheduleCache.isTeamScheduleStale()) {
                 // Cache is fresh enough, don't refresh from network
                 swipeRefreshLayout.isRefreshing = false
                 return
@@ -281,20 +293,18 @@ class PeopleFragment : Fragment() {
         
         lifecycleScope.launch {
             try {
-                fetchTeamMembers()
+                fetchTeamMembers(forceRefresh)
             } finally {
                 swipeRefreshLayout.isRefreshing = false
             }
         }
     }
 
-    private suspend fun fetchTeamMembers() {
-        var schedule = scheduleCache.getSchedule()
-        if (schedule == null) {
-            schedule = try { apiService.getSchedule(30) } catch (e: Exception) { null }
-            if (schedule != null) {
-                scheduleCache.saveSchedule(schedule)
-            }
+    private suspend fun fetchTeamMembers(forceRefresh: Boolean) {
+        var schedule = repository.getSchedule(forceRefresh = false) // Use repo, allow cached
+        
+        if (schedule == null && forceRefresh) {
+             schedule = repository.getSchedule(forceRefresh = true)
         }
 
         if (schedule != null) {
@@ -310,15 +320,15 @@ class PeopleFragment : Fragment() {
                 val startStr = LocalDateTime.now().minusDays(90).withHour(0).withMinute(0).withSecond(0).format(formatter)
                 val endStr = LocalDateTime.now().plusDays(90).withHour(23).withMinute(59).withSecond(59).format(formatter)
 
-                val teamMembers = try {
-                    apiService.getTeamMembers(cafeNo, companyCode, startStr, endStr)
-                } catch (e: Exception) {
-                    null
-                }
+                val teamMembers = repository.getTeamMembers(
+                    cafeNo, 
+                    companyCode, 
+                    startStr, 
+                    endStr, 
+                    forceRefresh = forceRefresh
+                )
 
                 if (teamMembers != null) {
-                    scheduleCache.saveTeamRoster(teamMembers)
-                    scheduleCache.saveSchedule(schedule) 
                     updateTimestamp()
                     startUpdateTimer()
                     processTeamMembers(teamMembers, schedule)

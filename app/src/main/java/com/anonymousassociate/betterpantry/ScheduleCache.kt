@@ -102,6 +102,37 @@ class ScheduleCache(context: Context) {
             .apply()
     }
 
+    fun mergeTeamSchedule(newMembers: List<TeamMember>) {
+        val current = getTeamSchedule() ?: emptyList()
+        val currentMap = current.associateBy { it.associate?.employeeId }.toMutableMap()
+        
+        newMembers.forEach { newMember ->
+            val empId = newMember.associate?.employeeId
+            if (empId != null) {
+                if (currentMap.containsKey(empId)) {
+                    // Merge shifts
+                    val existingMember = currentMap[empId]!!
+                    val existingShifts = existingMember.shifts ?: emptyList()
+                    val newShifts = newMember.shifts ?: emptyList()
+                    
+                    // Simple merge: filter out existing shifts that overlap or match new ones?
+                    // Or just combine and distinct by shiftId/startDateTime?
+                    // Since we usually fetch by day range, we might want to replace shifts in that range.
+                    // But here we'll just distinct by ID for safety.
+                    val combinedShifts = (existingShifts + newShifts).distinctBy { 
+                        it.shiftId ?: "${it.startDateTime}-${it.workstationId}" 
+                    }
+                    
+                    currentMap[empId] = existingMember.copy(shifts = combinedShifts)
+                } else {
+                    currentMap[empId] = newMember
+                }
+            }
+        }
+        
+        saveTeamSchedule(currentMap.values.toList())
+    }
+
     fun getTeamSchedule(): List<TeamMember>? {
         val json = prefs.getString("team_schedule_full", null) ?: return null
         val type = object : TypeToken<List<TeamMember>>() {}.type
@@ -120,28 +151,15 @@ class ScheduleCache(context: Context) {
     }
 
     fun saveTeamRoster(members: List<TeamMember>) {
-        val json = gson.toJson(members)
-        prefs.edit()
-            .putString("team_roster_full", json)
-            .putLong("team_roster_last_update_time", System.currentTimeMillis())
-            .apply()
+        saveTeamSchedule(members)
     }
 
     fun getTeamRoster(): List<TeamMember>? {
-        val json = prefs.getString("team_roster_full", null) ?: return null
-        val type = object : TypeToken<List<TeamMember>>() {}.type
-        return try {
-            gson.fromJson(json, type)
-        } catch (e: Exception) {
-            null
-        }
+        return getTeamSchedule()
     }
 
     fun isTeamRosterStale(): Boolean {
-        val lastUpdate = prefs.getLong("team_roster_last_update_time", 0)
-        if (lastUpdate == 0L) return true
-        val fiveMinutesAgo = System.currentTimeMillis() - (5 * 60 * 1000)
-        return lastUpdate < fiveMinutesAgo
+        return isTeamScheduleStale()
     }
 
     fun getFavorites(): Set<String> {

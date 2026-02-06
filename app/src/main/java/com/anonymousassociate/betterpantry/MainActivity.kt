@@ -38,6 +38,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var authManager: AuthManager
     private lateinit var apiService: PantryApiService
+
+    lateinit var repository: PantryRepository
+        private set
+
     private var isAuthenticating = false
     private var isAuthenticated = false
     private var hasShownBiometricThisSession = false
@@ -45,8 +49,8 @@ class MainActivity : AppCompatActivity() {
     private var wasInBackground = false
 
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
-    private var notificationCheckRunnable: Runnable? = null
-    private var scheduleRefreshRunnable: Runnable? = null
+    private var fastLoopRunnable: Runnable? = null
+    private var slowLoopRunnable: Runnable? = null
     
     private var pendingNotificationJson: String? = null
 
@@ -63,6 +67,8 @@ class MainActivity : AppCompatActivity() {
 
         authManager = AuthManager(this)
         apiService = PantryApiService(authManager)
+        val scheduleCache = ScheduleCache(this)
+        repository = PantryRepository(apiService, scheduleCache)
 
         // Fix for purple/black bars in cutout/notch area
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
@@ -691,38 +697,91 @@ class MainActivity : AppCompatActivity() {
 
     private fun startPeriodicChecks() {
         stopPeriodicChecks() // Ensure no duplicates
-        notificationCheckRunnable = object : Runnable {
+
+        // 20 Second Loop: getNotificationCount, getNotifications, checkAndSendNewNotifications
+        fastLoopRunnable = object : Runnable {
             override fun run() {
                 if (isAuthenticated) {
-                    NotificationWorker.checkAndSendNewNotifications(this@MainActivity)
                     lifecycleScope.launch {
                         try {
-                            val count = apiService.getNotificationCount()
+                            val count = repository.getNotificationCount()
                             updateNotificationBadge(count)
+                            repository.getNotifications() // Fetch latest for cache/updates
+                            repository.checkAndSendNewNotifications(this@MainActivity)
                         } catch (e: Exception) {
                             e.printStackTrace()
                         }
                     }
                 }
-                handler.postDelayed(this, 30 * 1000)
+                handler.postDelayed(this, 20 * 1000)
             }
         }
-        handler.post(notificationCheckRunnable!!)
+        handler.post(fastLoopRunnable!!)
 
-        scheduleRefreshRunnable = object : Runnable {
+        // 5 Minute Loop: getSchedule, getNotificationCount, getTeamMembers, getNotifications, checkAndSendNewNotifications
+        slowLoopRunnable = object : Runnable {
             override fun run() {
                 if (isAuthenticated) {
-                    reloadHomeFragmentSchedule()
+                    lifecycleScope.launch {
+                        try {
+                            // Fetch Schedule (only if stale or forced, but loop implies "keep fresh")
+                            // User said: "getteammembers and getschedule should only be called if the data is stale (hasn't been updated in 5 minutes or more)"
+                            // So we pass forceRefresh=false and let repo handle it.
+                            // But wait, if the loop is 5 mins, and stale time is 5 mins, it will likely fetch.
+                            
+                            val schedule = repository.getSchedule(forceRefresh = false)
+                            
+                            val count = repository.getNotificationCount()
+                            updateNotificationBadge(count)
+                            
+                            repository.getNotifications(forceRefresh = false)
+                            repository.checkAndSendNewNotifications(this@MainActivity)
+                            
+                            // For Team Members, we need parameters. 
+                            // We can use the current schedule's range or default to "Next 30 days" which matches getSchedule(30).
+                            // getSchedule(30) fetches 30 days.
+                            // So we should fetch team members for 30 days.
+                            val start = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ISO_DATE)
+                            val end = java.time.LocalDate.now().plusDays(30).format(java.time.format.DateTimeFormatter.ISO_DATE)
+                            
+                            // We need cafeNo and companyCode. We can get them from the schedule or user profile if stored.
+                            // But the repo/apiService needs them passed.
+                            // We can try to extract from the just-fetched schedule?
+                            schedule?.currentShifts?.firstOrNull()?.let { firstShift ->
+                                val cafe = firstShift.cafeNumber
+                                val company = firstShift.companyCode
+                                if (cafe != null && company != null) {
+                                    repository.getTeamMembers(cafe, company, start, end, forceRefresh = false)
+                                }
+                            }
+                            
+                            // Notify fragments to update UI if they are visible
+                            val currentFragment = supportFragmentManager.findFragmentById(binding.fragmentContainer.id)
+                            if (currentFragment is HomeFragment) {
+                                currentFragment.refreshDataFromCache()
+                            } else if (currentFragment is com.anonymousassociate.betterpantry.ui.ScheduleFragment) {
+                                // Add method if missing
+                                (currentFragment as? com.anonymousassociate.betterpantry.ui.ScheduleFragment)?.refreshDataFromCache()
+                            } else if (currentFragment is com.anonymousassociate.betterpantry.ui.PeopleFragment) {
+                                (currentFragment as? com.anonymousassociate.betterpantry.ui.PeopleFragment)?.refreshDataFromCache()
+                            } else if (currentFragment is NotificationsFragment) {
+                                currentFragment.refreshDataFromCache()
+                            }
+
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
                 }
                 handler.postDelayed(this, 5 * 60 * 1000)
             }
         }
-        handler.post(scheduleRefreshRunnable!!)
+        handler.post(slowLoopRunnable!!)
     }
 
     private fun stopPeriodicChecks() {
-        notificationCheckRunnable?.let { handler.removeCallbacks(it) }
-        scheduleRefreshRunnable?.let { handler.removeCallbacks(it) }
+        fastLoopRunnable?.let { handler.removeCallbacks(it) }
+        slowLoopRunnable?.let { handler.removeCallbacks(it) }
     }
 
     companion object {

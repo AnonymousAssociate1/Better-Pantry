@@ -43,8 +43,18 @@ import com.anonymousassociate.betterpantry.models.NotificationData
 class HomeFragment : Fragment() {
 
     private lateinit var authManager: AuthManager
-    private lateinit var apiService: PantryApiService
-    private lateinit var scheduleCache: ScheduleCache
+    private val repository by lazy { (requireActivity() as com.anonymousassociate.betterpantry.MainActivity).repository }
+    private val scheduleCache by lazy { (requireActivity() as com.anonymousassociate.betterpantry.MainActivity).repository.let { 
+        // We can access cache via repository if we expose it or just use repository methods. 
+        // For now, let's keep scheduleCache access if needed for specific non-repo things, 
+        // but prefer repo. Actually, MainActivity creates ScheduleCache. 
+        // Let's just create a new instance if needed or access via Activity? 
+        // Better: ScheduleCache(requireContext()) is fine as it uses SharedPreferences (singleton-ish underlying).
+        // BUT, to ensure "shared cache" logic, we should probably stick to what the Repo uses.
+        // For read-only access to helpers like getLastUpdateText, local instance is fine.
+        ScheduleCache(requireContext())
+    }}
+    
     private lateinit var calendarAdapter: CalendarAdapter
     private lateinit var calendarRecyclerView: RecyclerView
     private lateinit var shiftsRecyclerView: RecyclerView
@@ -75,8 +85,6 @@ class HomeFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
 
         authManager = AuthManager(requireContext())
-        apiService = PantryApiService(authManager)
-        scheduleCache = ScheduleCache(requireContext())
         moneyPreferences = com.anonymousassociate.betterpantry.MoneyPreferences(requireContext())
 
         calendarRecyclerView = view.findViewById(R.id.calendarRecyclerView)
@@ -361,6 +369,16 @@ class HomeFragment : Fragment() {
         }
     }
 
+    fun refreshDataFromCache() {
+        if (!isAdded) return
+        val cached = scheduleCache.getSchedule()
+        if (cached != null) {
+            scheduleData = cached
+            displaySchedule(cached)
+            updateTimestamp()
+        }
+    }
+
     private fun loadSchedule(forceRefresh: Boolean = false) {
         if (!forceRefresh) {
             if (!scheduleCache.isScheduleStale() && scheduleData != null) {
@@ -376,10 +394,11 @@ class HomeFragment : Fragment() {
 
         lifecycleScope.launch {
             try {
-                val schedule = apiService.getSchedule(30)
+                // Use Repository
+                val schedule = repository.getSchedule(forceRefresh)
                 schedule?.let {
                     scheduleData = it
-                    scheduleCache.saveSchedule(it)
+                    // Cache save handled by repository
                     displaySchedule(it)
                     updateTimestamp()
                     startUpdateTimer()
@@ -398,7 +417,7 @@ class HomeFragment : Fragment() {
     fun checkNotifications() {
         lifecycleScope.launch {
             try {
-                val count = apiService.getNotificationCount()
+                val count = repository.getNotificationCount()
                 (requireActivity() as? com.anonymousassociate.betterpantry.MainActivity)?.updateNotificationBadge(count)
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -407,43 +426,31 @@ class HomeFragment : Fragment() {
     }
 
     private fun prefetchTeamMembers(schedule: ScheduleData) {
-        val myShifts = schedule.currentShifts ?: emptyList()
-        val availableShifts = schedule.track?.filter { track ->
-            track.type == "AVAILABLE" && track.primaryShiftRequest?.state == "AVAILABLE"
-        }?.mapNotNull { it.primaryShiftRequest?.shift } ?: emptyList()
+        val sampleShift = schedule.currentShifts?.firstOrNull { 
+            it.cafeNumber != null && it.companyCode != null 
+        } ?: schedule.track?.mapNotNull { it.primaryShiftRequest?.shift }?.firstOrNull { 
+            it.cafeNumber != null && it.companyCode != null 
+        }
 
-        val allShifts = myShifts + availableShifts
-        
-        lifecycleScope.launch {
-            allShifts.forEach { shiftItem ->
-                val currentShift = shiftItem
-                launch(Dispatchers.IO) {
-                    if (currentShift.cafeNumber != null && currentShift.companyCode != null &&
-                        currentShift.startDateTime != null && currentShift.endDateTime != null) {
-                        
-                        try {
-                            val shiftId = currentShift.shiftId ?: "${currentShift.startDateTime}-${currentShift.workstationId ?: currentShift.workstationCode}"
-                            
-                            // Always fetch fresh data when schedule is refreshed
-                            val startOfDay = LocalDateTime.parse(currentShift.startDateTime)
-                                .with(java.time.LocalTime.MIN)
-                                .format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+        if (sampleShift == null) return
 
-                            val teamMembers = apiService.getTeamMembers(
-                                currentShift.cafeNumber,
-                                currentShift.companyCode,
-                                startOfDay,
-                                currentShift.endDateTime
-                            )
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                // Fetch for a wide range (e.g. today to +30 days) to cover the calendar view
+                val now = LocalDateTime.now()
+                val start = now.minusDays(1).withHour(0).withMinute(0).withSecond(0).format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+                val end = now.plusDays(35).withHour(23).withMinute(59).withSecond(59).format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
 
-                            if (teamMembers != null) {
-                                scheduleCache.saveTeamMembers(shiftId, teamMembers)
-                            }
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                        }
-                    }
-                }
+                // Use Repository
+                repository.getTeamMembers(
+                    sampleShift.cafeNumber!!,
+                    sampleShift.companyCode!!,
+                    start,
+                    end
+                )
+                // Repository handles caching/merging
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
         }
     }
@@ -573,7 +580,7 @@ class HomeFragment : Fragment() {
         if (myShiftsOnDate.isNotEmpty() || availableShiftsOnDate.isNotEmpty()) {
             showShiftDetailDialog(myShiftsOnDate, availableShiftsOnDate, fromCalendarClick = true)
         } else {
-            // Open full schedule for the day
+            // Open full schedule for the day using cached data
             val teamMembers = scheduleCache.getTeamSchedule() ?: emptyList()
             val mergedMembers = mergeData(
                 teamMembers, 
@@ -1073,7 +1080,7 @@ class HomeFragment : Fragment() {
                         .with(java.time.LocalTime.MAX)
                         .format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
 
-                    val teamMembers = apiService.getTeamMembers(
+                    val teamMembers = repository.getTeamMembers(
                         shift.cafeNumber,
                         shift.companyCode,
                         startOfDay,
@@ -1287,10 +1294,10 @@ class HomeFragment : Fragment() {
 
         lifecycleScope.launch {
             try {
-                val newSchedule = apiService.getSchedule(30)
+                val newSchedule = repository.getSchedule(forceRefresh = true) // Force refresh to get latest state
                 if (newSchedule != null) {
                     scheduleData = newSchedule
-                    scheduleCache.saveSchedule(newSchedule)
+                    // scheduleCache.saveSchedule(newSchedule) // Handled by repository
                     displaySchedule(newSchedule)
                     updateTimestamp()
 
@@ -1390,7 +1397,7 @@ class HomeFragment : Fragment() {
                     }
                     put("receiveAssociate", receiveAssociate)
                 }
-                val success = apiService.acceptShiftPickup(payload.toString())
+                val success = repository.acceptShiftPickup(payload.toString())
                 if (success) {
                     reloadShiftDetails(shift)
                     checkNotifications()
@@ -1419,7 +1426,7 @@ class HomeFragment : Fragment() {
                 
                 println("DEBUG: HomeFragment performing cancel pickup with payload: $payload")
 
-                val responseCode = apiService.cancelPostShift(payload.toString())
+                val responseCode = repository.cancelPostShift(payload.toString())
                 if (responseCode in 200..299) {
                     reloadShiftDetails(shift)
                     checkNotifications()
@@ -1460,7 +1467,7 @@ class HomeFragment : Fragment() {
                 
                 println("DEBUG: HomeFragment performing cancel post with payload: $payload")
 
-                val responseCode = apiService.cancelPostShift(payload.toString())
+                val responseCode = repository.cancelPostShift(payload.toString())
                 if (responseCode in 200..299) {
                     reloadShiftDetails(shift)
                     checkNotifications()
@@ -1506,7 +1513,7 @@ class HomeFragment : Fragment() {
                     put("giveShift", giveShift)
                 }
                 
-                val success = apiService.postShift(payload.toString())
+                val success = repository.postShift(payload.toString())
                 if (success) {
                     reloadShiftDetails(shift)
                     checkNotifications()
@@ -1623,7 +1630,7 @@ class HomeFragment : Fragment() {
         hasCheckedForUpdates = true
         lifecycleScope.launch {
             try {
-                val release = apiService.getLatestRelease()
+                val release = repository.getLatestRelease()
                 if (release != null) {
                     val currentVersion = com.anonymousassociate.betterpantry.BuildConfig.VERSION_NAME
                     if (isNewerVersion(currentVersion, release.tag_name)) {

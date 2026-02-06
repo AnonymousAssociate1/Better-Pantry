@@ -60,8 +60,8 @@ import java.time.LocalDate
 class NotificationsFragment : Fragment() {
 
     private lateinit var authManager: AuthManager
-    private lateinit var apiService: PantryApiService
-    private lateinit var scheduleCache: ScheduleCache
+    private val repository by lazy { (requireActivity() as com.anonymousassociate.betterpantry.MainActivity).repository }
+    private val scheduleCache by lazy { (requireActivity() as com.anonymousassociate.betterpantry.MainActivity).repository.let { ScheduleCache(requireContext()) } }
     private lateinit var adapter: NotificationAdapter
     private lateinit var recyclerView: RecyclerView
     private lateinit var swipeRefreshLayout: SwipeRefreshLayout
@@ -95,8 +95,7 @@ class NotificationsFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
 
         authManager = AuthManager(requireContext())
-        apiService = PantryApiService(authManager)
-        scheduleCache = ScheduleCache(requireContext())
+        // apiService/scheduleCache replaced by repository
 
         recyclerView = view.findViewById(R.id.notificationsRecyclerView)
         swipeRefreshLayout = view.findViewById(R.id.swipeRefreshLayout)
@@ -247,9 +246,7 @@ class NotificationsFragment : Fragment() {
             onItemClick = { notification -> onItemClick(notification) },
             onTestClick = { notification ->
                 val appContext = requireContext().applicationContext
-                lifecycleScope.launch(Dispatchers.IO) {
-                    NotificationWorker.sendNotification(appContext, notification, apiService)
-                }
+                repository.sendTestNotification(appContext, notification)
             }
         )
         recyclerView.layoutManager = LinearLayoutManager(context)
@@ -276,7 +273,7 @@ class NotificationsFragment : Fragment() {
             
             lifecycleScope.launch {
                 try {
-                    apiService.markNotificationAsRead(notification.notificationId)
+                    repository.markNotificationAsRead(notification.notificationId)
                     val count = allNotifications.count { it.read == false }
                     (requireActivity() as? MainActivity)?.updateNotificationBadge(count)
                 } catch (e: Exception) {
@@ -557,7 +554,7 @@ class NotificationsFragment : Fragment() {
 
             // 2. Fetch from Network
             try {
-                val schedule = apiService.getSchedule(30)
+                val schedule = repository.getSchedule(forceRefresh = true)
                 if (schedule != null) {
                     scheduleData = schedule
                     val trackItem = schedule.track?.find { 
@@ -598,7 +595,7 @@ class NotificationsFragment : Fragment() {
 
             // 2. Fetch from Network
             try {
-                val schedule = apiService.getSchedule(30)
+                val schedule = repository.getSchedule(forceRefresh = true)
                 if (schedule != null) {
                     scheduleData = schedule
                     val myShift = schedule.currentShifts?.find { it.shiftId == shiftId }
@@ -885,20 +882,20 @@ class NotificationsFragment : Fragment() {
                 }
                 
                 if (responseType == "Associate Declined") {
-                    apiService.declineShiftPickup(payload.toString())
+                    repository.declineShiftPickup(payload.toString())
                 } else {
-                    val success = apiService.acceptShiftPickup(payload.toString())
+                    val success = repository.acceptShiftPickup(payload.toString())
                                     if (success) {
                                         (activity as? MainActivity)?.checkHomeFragmentNotifications()
-                                        scheduleCache.clear()
-                                        val newSchedule = apiService.getSchedule(30)
+                                        // scheduleCache.clear() // Handled by repo refresh
+                                        val newSchedule = repository.getSchedule(forceRefresh = true)
                                         if (newSchedule != null) {
                                             scheduleData = newSchedule
-                                            scheduleCache.saveSchedule(newSchedule)
+                                            // scheduleCache.saveSchedule(newSchedule) // Handled by repo
                                         }
                                     }                }
                 
-                loadNotifications()
+                loadNotifications(forceRefresh = true)
             } catch (e: Exception) {
                 e.printStackTrace()
                 loadNotifications()
@@ -1099,7 +1096,7 @@ class NotificationsFragment : Fragment() {
                         .with(java.time.LocalTime.MIN)
                         .format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
 
-                    val teamMembers = apiService.getTeamMembers(
+                    val teamMembers = repository.getTeamMembers(
                         shift.cafeNumber,
                         shift.companyCode,
                         startOfDay,
@@ -1269,7 +1266,7 @@ class NotificationsFragment : Fragment() {
 
         lifecycleScope.launch {
             try {
-                apiService.markNotificationAsRead(notificationId)
+                repository.markNotificationAsRead(notificationId)
                 val count = allNotifications.count { it.read == false }
                 (requireActivity() as? MainActivity)?.updateNotificationBadge(count)
             } catch (e: Exception) {
@@ -1285,13 +1282,13 @@ class NotificationsFragment : Fragment() {
                 val notification = allNotifications.find { it.notificationId == notificationId }
                 if (notification?.read == false) {
                     // Mark as read first
-                    apiService.markNotificationAsRead(notificationId)
+                    repository.markNotificationAsRead(notificationId)
                 }
                 
                 // Then delete
-                val success = apiService.deleteNotification(notificationId)
+                val success = repository.deleteNotification(notificationId)
                 if (success) {
-                    loadNotifications()
+                    loadNotifications(forceRefresh = true)
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -1302,9 +1299,9 @@ class NotificationsFragment : Fragment() {
     private fun onUndelete(notificationId: String) {
         lifecycleScope.launch {
             try {
-                val success = apiService.undeleteNotification(notificationId)
+                val success = repository.undeleteNotification(notificationId)
                 if (success) {
-                    loadNotifications()
+                    loadNotifications(forceRefresh = true)
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -1333,48 +1330,55 @@ class NotificationsFragment : Fragment() {
         }
     }
 
-            private fun loadNotifications() {
-                swipeRefreshLayout.post {
-                    swipeRefreshLayout.isRefreshing = true
-                }
+    fun refreshDataFromCache() {
+        if (!isAdded) return
+        val cached = scheduleCache.getCachedNotifications()
+        if (cached != null && cached.isNotEmpty()) {
+            allNotifications = cached
+            hasLoaded = true
+            updateList()
+        }
+    }
 
-                // Trigger the global check for new notifications which will send a push
-                lifecycleScope.launch(Dispatchers.IO) {
-                    try {
-                        NotificationWorker.checkAndSendNewNotifications(requireContext())
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-                }
+    private fun loadNotifications(forceRefresh: Boolean = false) {
+        swipeRefreshLayout.post {
+            swipeRefreshLayout.isRefreshing = true
+        }
 
-                // Load cache first
-                val cached = scheduleCache.getCachedNotifications()
-                if (cached != null && cached.isNotEmpty()) {
-                    allNotifications = cached
+        // Trigger the global check for new notifications which will send a push
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                // Use Repository helper
+                repository.checkAndSendNewNotifications(requireContext())
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        // Load cache first
+        if (!forceRefresh) refreshDataFromCache()
+
+        lifecycleScope.launch {
+            try {
+                // Use Repository
+                val response = repository.getNotifications(forceRefresh = forceRefresh)
+                if (response != null) {
+                    val fetched = response.content ?: emptyList()
+                    allNotifications = fetched.sortedByDescending { it.createDateTime }
+                    scheduleCache.saveNotifications(allNotifications)
                     hasLoaded = true
                     updateList()
-                }
 
-                lifecycleScope.launch {
-                    try {
-                        val response = apiService.getNotifications(size = 100)
-                        if (response != null) {
-                            val fetched = response.content ?: emptyList()
-                            allNotifications = fetched.sortedByDescending { it.createDateTime }
-                            scheduleCache.saveNotifications(allNotifications)
-                            hasLoaded = true
-                            updateList()
-
-                            val count = allNotifications.count { it.read == false }
-                            (requireActivity() as? MainActivity)?.updateNotificationBadge(count)
-                        }
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    } finally {
-                        swipeRefreshLayout.isRefreshing = false
-                    }
+                    val count = allNotifications.count { it.read == false }
+                    (requireActivity() as? MainActivity)?.updateNotificationBadge(count)
                 }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                swipeRefreshLayout.isRefreshing = false
             }
+        }
+    }
 
     private fun mergeData(
         teamMembers: List<TeamMember>, 
