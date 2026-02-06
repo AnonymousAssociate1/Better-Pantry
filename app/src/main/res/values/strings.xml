@@ -1,14 +1,18 @@
 <resources>
     <string name="app_name">Better Pantry</string>
     <string name="release_notes">
-**Features**\n
-**•** Added option to show pay for shifts on home page\n
-**•** Added co-workers without shifts to the people tab\n
-\n
 **Fixes**\n
-**•** Shows and sorts by preferred names over legal names\n
-**•** Updating info is consistent and functional\n
-**•** Logging in should be more consistent\n
-**•** Notifications show cached version when network unavailable\n
+**•** Updating info is ACTUALLY consistent and functional\n
+**•** Fixed some issues rendering and retrieving data on the people page\n
+**•** Available shifts properly render\n
     </string>
+<!--    **Features**\n-->
+<!--    **•** Added option to show pay for shifts on home page\n-->
+<!--    **•** Added co-workers without shifts to the people tab\n-->
+<!--    \n-->
+<!--    **Fixes**\n-->
+<!--    **•** Shows and sorts by preferred names over legal names\n-->
+<!--    **•** Updating info is consistent and functional\n-->
+<!--    **•** Logging in should be more consistent\n-->
+<!--    **•** Notifications show cached version when network unavailable\n-->
 </resources>
