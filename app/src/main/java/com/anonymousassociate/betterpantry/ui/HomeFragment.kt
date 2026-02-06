@@ -475,8 +475,14 @@ class HomeFragment : Fragment() {
         }
 
         val availableShifts = schedule.track?.filter { track ->
-            track.type == "AVAILABLE" && track.primaryShiftRequest?.state == "AVAILABLE"
-        }?.mapNotNull { it.primaryShiftRequest?.shift }
+            val isTypeAvailable = track.type == "AVAILABLE"
+            val primaryState = track.primaryShiftRequest?.state
+            val isStateOpen = primaryState == "AVAILABLE" || primaryState == "APPROVED"
+            val isClaimed = track.relatedShiftRequests?.any { it.state == "APPROVED" } == true
+            
+            isTypeAvailable && isStateOpen && !isClaimed
+        }?.sortedByDescending { it.primaryShiftRequest?.requestedAt }
+         ?.mapNotNull { it.primaryShiftRequest?.shift }
          ?.distinctBy { it.shiftId }
          ?.sortedBy { it.startDateTime } ?: emptyList()
 
@@ -490,9 +496,10 @@ class HomeFragment : Fragment() {
                 subtitleProvider = { shift ->
                     var subtitle = ""
                     try {
-                        val trackItem = schedule.track?.find { 
-                            it.type == "AVAILABLE" && it.primaryShiftRequest?.shift == shift 
-                        }
+                        val trackItem = schedule.track?.filter { 
+                            it.type == "AVAILABLE" && it.primaryShiftRequest?.shift?.shiftId == shift.shiftId 
+                        }?.maxByOrNull { it.primaryShiftRequest?.requestedAt ?: "" }
+                        
                         val requester = trackItem?.primaryShiftRequest
                         val requesterName = getEmployeeName(requester?.requesterId)
                         val timeAgo = getTimeAgo(requester?.requestedAt)
@@ -1181,11 +1188,13 @@ class HomeFragment : Fragment() {
         // 2. Available Shifts (from track)
         val availableMembers = tracks
             .filter { it.type == "AVAILABLE" }
-            .distinctBy { it.primaryShiftRequest?.shift?.shiftId } // Deduplicate
             .filter { 
                 val state = it.primaryShiftRequest?.state
-                state == "AVAILABLE"
+                val isClaimed = it.relatedShiftRequests?.any { r -> r.state == "APPROVED" } == true
+                (state == "AVAILABLE" || state == "APPROVED") && !isClaimed
             }
+            .sortedByDescending { it.primaryShiftRequest?.requestedAt }
+            .distinctBy { it.primaryShiftRequest?.shift?.shiftId }
             .mapNotNull { track ->
             val s = track.primaryShiftRequest?.shift
             val req = track.primaryShiftRequest

@@ -304,12 +304,46 @@ class PeerScheduleFragment : Fragment() {
         shiftsRecyclerView.adapter = ShiftAdapter(distinctShifts, { showShiftDetailDialog(listOf(it), emptyList()) })
         shiftsRecyclerView.layoutManager = LinearLayoutManager(context)
 
-        val availableShifts = schedule.track?.filter { it.type == "AVAILABLE" && it.primaryShiftRequest?.state == "AVAILABLE" }?.mapNotNull { it.primaryShiftRequest?.shift }?.distinctBy { it.shiftId }?.sortedBy { it.startDateTime } ?: emptyList()
+        val availableShifts = schedule.track?.filter { track -> 
+            val isTypeAvailable = track.type == "AVAILABLE"
+            val primaryState = track.primaryShiftRequest?.state
+            val isStateOpen = primaryState == "AVAILABLE" || primaryState == "APPROVED"
+            val isClaimed = track.relatedShiftRequests?.any { it.state == "APPROVED" } == true
+            
+            isTypeAvailable && isStateOpen && !isClaimed
+        }?.sortedByDescending { it.primaryShiftRequest?.requestedAt }
+         ?.mapNotNull { it.primaryShiftRequest?.shift }
+         ?.distinctBy { it.shiftId }
+         ?.sortedBy { it.startDateTime } ?: emptyList()
         val availableShiftsTitle = view?.findViewById<View>(R.id.availableShiftsTitle)
         if (availableShifts.isNotEmpty()) {
             availableShiftsRecyclerView.visibility = View.VISIBLE
             availableShiftsTitle?.visibility = View.VISIBLE
-            availableShiftsRecyclerView.adapter = ShiftAdapter(availableShifts, { showShiftDetailDialog(emptyList(), listOf(it)) })
+            val availableAdapter = ShiftAdapter(
+                shifts = availableShifts,
+                onShiftClick = { showShiftDetailDialog(emptyList(), listOf(it)) },
+                subtitleProvider = { shift ->
+                    var subtitle = ""
+                    try {
+                        val trackItem = schedule.track?.filter { 
+                            it.type == "AVAILABLE" && it.primaryShiftRequest?.shift?.shiftId == shift.shiftId 
+                        }?.maxByOrNull { it.primaryShiftRequest?.requestedAt ?: "" }
+                        
+                        val requester = trackItem?.primaryShiftRequest
+                        val requesterName = getEmployeeName(requester?.requesterId)
+                        val timeAgo = getTimeAgo(requester?.requestedAt)
+                        
+                        val workstationId = shift.workstationId ?: shift.workstationCode ?: ""
+                        val workstationName = getWorkstationDisplayName(workstationId, shift.workstationName)
+                        
+                        subtitle = "$workstationName - Posted by $requesterName $timeAgo"
+                    } catch (e: Exception) {
+                        subtitle = shift.workstationName ?: "Shift"
+                    }
+                    subtitle
+                }
+            )
+            availableShiftsRecyclerView.adapter = availableAdapter
             availableShiftsRecyclerView.layoutManager = LinearLayoutManager(context)
         } else {
             availableShiftsRecyclerView.visibility = View.GONE
@@ -321,7 +355,18 @@ class PeerScheduleFragment : Fragment() {
         val schedule = peerScheduleData ?: return
 
         val peerShiftsOnDate = schedule.currentShifts?.filter { it.startDateTime?.startsWith(date.toString()) == true && it.employeeId == peer?.employeeId } ?: emptyList()
-        val availableShiftsOnDate = schedule.track?.asSequence()?.filter { it.type == "AVAILABLE" }?.mapNotNull { it.primaryShiftRequest?.shift }?.filter { it.startDateTime?.startsWith(date.toString()) == true }?.distinctBy { it.shiftId }?.toList() ?: emptyList()
+        val availableShiftsOnDate = schedule.track?.filter { track -> 
+            val isTypeAvailable = track.type == "AVAILABLE"
+            val primaryState = track.primaryShiftRequest?.state
+            val isStateOpen = primaryState == "AVAILABLE" || primaryState == "APPROVED"
+            val isClaimed = track.relatedShiftRequests?.any { it.state == "APPROVED" } == true
+            
+            isTypeAvailable && isStateOpen && !isClaimed
+        }?.sortedByDescending { it.primaryShiftRequest?.requestedAt }
+         ?.mapNotNull { it.primaryShiftRequest?.shift }
+         ?.filter { it.startDateTime?.startsWith(date.toString()) == true }
+         ?.distinctBy { it.shiftId }
+         ?.sortedBy { it.startDateTime } ?: emptyList()
 
         if (peerShiftsOnDate.isNotEmpty() || availableShiftsOnDate.isNotEmpty()) {
             showShiftDetailDialog(peerShiftsOnDate, availableShiftsOnDate, fromCalendarClick = true)
@@ -391,6 +436,7 @@ class PeerScheduleFragment : Fragment() {
         val shiftDateTime = cardView.findViewById<TextView>(R.id.shiftDateTime)
         val shiftPosition = cardView.findViewById<TextView>(R.id.shiftPosition)
         val shiftLocation = cardView.findViewById<TextView>(R.id.shiftLocation)
+        val postedByText = cardView.findViewById<TextView>(R.id.postedByText)
         val coworkersHeaderWrapper = cardView.findViewById<View>(R.id.coworkersHeaderWrapper)
         val expandCoworkersButton = cardView.findViewById<View>(R.id.expandCoworkersButton)
         val shareCoworkersButton = cardView.findViewById<View>(R.id.shareCoworkersButton)
@@ -403,6 +449,26 @@ class PeerScheduleFragment : Fragment() {
         val cafeInfo = peerScheduleData?.cafeList?.firstOrNull { it.departmentName?.contains(shift.cafeNumber ?: "") == true } ?: peerScheduleData?.cafeList?.firstOrNull()
         val addressStr = cafeInfo?.address?.let { "${it.addressLine ?: ""}, ${it.city ?: ""}, ${it.state ?: ""}" }?.trim(',',' ') ?: ""
         shiftLocation.text = if (addressStr.isNotEmpty()) "#${shift.cafeNumber} - $addressStr" else "#${shift.cafeNumber}"
+
+        if (isAvailable) {
+            val trackItem = peerScheduleData?.track?.filter { 
+                it.type == "AVAILABLE" && it.primaryShiftRequest?.shift?.shiftId == shift.shiftId 
+            }?.maxByOrNull { it.primaryShiftRequest?.requestedAt ?: "" }
+            
+            if (trackItem != null) {
+                val requester = trackItem.primaryShiftRequest
+                if (requester != null) {
+                    val requesterName = getEmployeeName(requester.requesterId)
+                    val timeAgo = getTimeAgo(requester.requestedAt)
+                    postedByText.text = "Posted by $requesterName $timeAgo"
+                    postedByText.visibility = View.VISIBLE
+                }
+            } else {
+                postedByText.visibility = View.GONE
+            }
+        } else {
+            postedByText.visibility = View.GONE
+        }
 
         if (!isNested) {
             coworkersHeaderWrapper.visibility = View.VISIBLE
@@ -486,7 +552,13 @@ class PeerScheduleFragment : Fragment() {
                     EnrichedShift(
                         shift = s.copy(employeeId = member.associate?.employeeId), firstName = firstName, lastName = member.associate?.lastName,
                         isMe = isMe || isFocal, isAvailable = member.associate?.employeeId == "AVAILABLE_SHIFT",
-                        location = location
+                        location = location,
+                        managerNotes = s.managerNotes,
+                        requesterName = s.requesterName,
+                        requestedAt = s.requestedAt,
+                        requestId = s.requestId,
+                        myPickupRequestId = s.myPickupRequestId,
+                        pickupRequests = s.pickupRequests
                     )
                 } else null
             } ?: emptyList()
@@ -593,11 +665,13 @@ class PeerScheduleFragment : Fragment() {
         
         val availableMembers = tracks
             .filter { it.type == "AVAILABLE" }
-            .distinctBy { it.primaryShiftRequest?.shift?.shiftId }
             .filter { 
                 val state = it.primaryShiftRequest?.state
-                state == "AVAILABLE"
+                val isClaimed = it.relatedShiftRequests?.any { r -> r.state == "APPROVED" } == true
+                (state == "AVAILABLE" || state == "APPROVED") && !isClaimed
             }
+            .sortedByDescending { it.primaryShiftRequest?.requestedAt }
+            .distinctBy { it.primaryShiftRequest?.shift?.shiftId }
             .mapNotNull { track ->
                 val s = track.primaryShiftRequest?.shift
                 val req = track.primaryShiftRequest
@@ -765,6 +839,30 @@ class PeerScheduleFragment : Fragment() {
     }
 
 
+
+    private fun getTimeAgo(requestedAt: String?): String {
+        if (requestedAt == null) return ""
+        return try {
+            val requestTime = java.time.Instant.parse(requestedAt)
+            val now = java.time.Instant.now()
+            val duration = java.time.Duration.between(requestTime, now)
+            val minutes = duration.toMinutes()
+            val safeMinutes = if (minutes < 0) 0 else minutes
+            when {
+                safeMinutes < 60 -> "$safeMinutes minute${if (safeMinutes != 1L) "s" else ""} ago"
+                safeMinutes < 1440 -> {
+                    val hours = safeMinutes / 60
+                    "$hours hour${if (hours != 1L) "s" else ""} ago"
+                }
+                else -> {
+                    val days = safeMinutes / 1440
+                    "$days day${if (days != 1L) "s" else ""} ago"
+                }
+            }
+        } catch (e: Exception) {
+            ""
+        }
+    }
 
     private fun Int.dpToPx(): Int = (this * resources.displayMetrics.density).toInt()
 }

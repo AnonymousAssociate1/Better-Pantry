@@ -1418,11 +1418,13 @@ class NotificationsFragment : Fragment() {
         // 2. Available Shifts (from track)
         val availableMembers = tracks
             .filter { it.type == "AVAILABLE" }
-            .distinctBy { it.primaryShiftRequest?.shift?.shiftId } // Deduplicate
             .filter { 
                 val state = it.primaryShiftRequest?.state
-                state == "AVAILABLE"
+                val isClaimed = it.relatedShiftRequests?.any { r -> r.state == "APPROVED" } == true
+                (state == "AVAILABLE" || state == "APPROVED") && !isClaimed
             }
+            .sortedByDescending { it.primaryShiftRequest?.requestedAt }
+            .distinctBy { it.primaryShiftRequest?.shift?.shiftId } // Deduplicate
             .mapNotNull { track ->
             val s = track.primaryShiftRequest?.shift
             val req = track.primaryShiftRequest
