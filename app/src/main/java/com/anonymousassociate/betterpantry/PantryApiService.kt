@@ -336,6 +336,147 @@ class PantryApiService(private val authManager: AuthManager) {
         }
     }
 
+    suspend fun getAvailability(): com.anonymousassociate.betterpantry.models.AvailabilityResponse? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val userId = authManager.getUserId() ?: return@withContext null
+                val token = authManager.getAccessToken() ?: return@withContext null
+
+                val url = "https://pantry.panerabread.com/apis/selfservice-ui-service/v1/availability?employeeId=$userId"
+
+                val request = Request.Builder()
+                    .url(url)
+                    .header("Authorization", "Bearer $token")
+                    .header("Accept", "application/json")
+                    .header("User-Agent", "Pantry/2.0 Android")
+                    .get()
+                    .build()
+
+                val response = client.newCall(request).execute()
+                if (response.isSuccessful) {
+                    val json = response.body?.string()
+                    gson.fromJson(json, com.anonymousassociate.betterpantry.models.AvailabilityResponse::class.java)
+                } else {
+                    null
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                null
+            }
+        }
+    }
+
+    suspend fun getMaxHours(): com.anonymousassociate.betterpantry.models.MaxHoursResponse? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val userId = authManager.getUserId() ?: return@withContext null
+                val token = authManager.getAccessToken() ?: return@withContext null
+
+                val url = "https://pantry.panerabread.com/apis/selfservice-ui-service/v1/max-hours/all?paneraId=$userId"
+
+                val request = Request.Builder()
+                    .url(url)
+                    .header("Authorization", "Bearer $token")
+                    .header("Accept", "application/json")
+                    .header("User-Agent", "Pantry/2.0 Android")
+                    .get()
+                    .build()
+
+                val response = client.newCall(request).execute()
+                if (response.isSuccessful) {
+                    val json = response.body?.string()
+                    gson.fromJson(json, com.anonymousassociate.betterpantry.models.MaxHoursResponse::class.java)
+                } else {
+                    null
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                null
+            }
+        }
+    }
+
+    suspend fun getTimeOff(): List<com.anonymousassociate.betterpantry.models.TimeOffRequest>? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val userId = authManager.getUserId() ?: return@withContext null
+                val token = authManager.getAccessToken() ?: return@withContext null
+
+                val url = "https://pantry.panerabread.com/apis/selfservice-ui-service/v1/franchise-request-time-off/all?paneraId=$userId"
+
+                val request = Request.Builder()
+                    .url(url)
+                    .header("Authorization", "Bearer $token")
+                    .header("Accept", "application/json")
+                    .header("User-Agent", "Pantry/2.0 Android")
+                    .get()
+                    .build()
+
+                val response = client.newCall(request).execute()
+                if (response.isSuccessful) {
+                    val json = response.body?.string()
+                    val type = object : TypeToken<List<com.anonymousassociate.betterpantry.models.TimeOffRequest>>() {}.type
+                    gson.fromJson(json, type)
+                } else {
+                    null
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                null
+            }
+        }
+    }
+
+    suspend fun requestTimeOff(payload: String): Boolean {
+        return withContext(Dispatchers.IO) {
+            try {
+                val token = authManager.getAccessToken() ?: return@withContext false
+                val url = "https://pantry.panerabread.com/apis/selfservice-ui-service/v1/franchise-request-time-off/request"
+
+                val body = payload.toRequestBody("application/json".toMediaTypeOrNull())
+
+                val request = Request.Builder()
+                    .url(url)
+                    .header("Authorization", "Bearer $token")
+                    .header("Accept", "application/json, text/plain, */*")
+                    .header("User-Agent", "Pantry/2.0 Android")
+                    .post(body)
+                    .build()
+
+                val response = client.newCall(request).execute()
+                response.isSuccessful
+            } catch (e: Exception) {
+                e.printStackTrace()
+                false
+            }
+        }
+    }
+
+    suspend fun cancelTimeOff(payload: String): Boolean {
+        return withContext(Dispatchers.IO) {
+            try {
+                val token = authManager.getAccessToken() ?: return@withContext false
+                val url = "https://pantry.panerabread.com/apis/selfservice-ui-service/v1/franchise-request-time-off/cancel"
+
+                val body = payload.toRequestBody("application/json".toMediaTypeOrNull())
+
+                val request = Request.Builder()
+                    .url(url)
+                    .header("Authorization", "Bearer $token")
+                    .header("Accept", "application/json, text/plain, */*")
+                    .header("User-Agent", "Pantry/2.0 Android")
+                    .post(body)
+                    .build()
+
+                val response = client.newCall(request).execute()
+                response.isSuccessful
+            } catch (e: Exception) {
+                e.printStackTrace()
+                false
+            }
+        }
+    }
+
     suspend fun getLatestRelease(): GitHubRelease? {
         return withContext(Dispatchers.IO) {
             try {

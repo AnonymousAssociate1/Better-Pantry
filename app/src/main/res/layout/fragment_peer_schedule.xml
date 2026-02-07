@@ -34,32 +34,6 @@
 
                         
 
-                                        <ImageButton
-
-                                            android:id="@+id/settingsButton"
-
-                                            android:layout_width="40dp"
-
-                                            android:layout_height="40dp"
-
-                                            android:background="?attr/selectableItemBackgroundBorderless"
-
-                                            android:src="@drawable/ic_settings"
-
-                                            android:scaleType="centerInside"
-
-                                            android:contentDescription="Settings"
-
-                                            android:tint="@color/text_primary"
-
-                                            app:layout_constraintTop_toTopOf="@id/updatedText"
-
-                                            app:layout_constraintBottom_toBottomOf="@id/nameText"
-
-                                            app:layout_constraintEnd_toEndOf="parent" />
-
-                        
-
                                         <TextView
 
                                             android:id="@+id/updatedText"

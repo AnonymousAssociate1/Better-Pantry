@@ -122,9 +122,9 @@ class MainActivity : AppCompatActivity() {
                 if (binding.bottomNavigation.selectedItemId != R.id.nav_home) {
                     binding.bottomNavigation.menu.findItem(R.id.nav_home).isChecked = true
                 }
-            } else if (current is com.anonymousassociate.betterpantry.ui.ScheduleFragment) {
-                if (binding.bottomNavigation.selectedItemId != R.id.nav_schedule) {
-                    binding.bottomNavigation.menu.findItem(R.id.nav_schedule).isChecked = true
+            } else if (current is com.anonymousassociate.betterpantry.ui.SettingsFragment) {
+                if (binding.bottomNavigation.selectedItemId != R.id.nav_settings) {
+                    binding.bottomNavigation.menu.findItem(R.id.nav_settings).isChecked = true
                 }
             } else if (current is com.anonymousassociate.betterpantry.ui.PeopleFragment) {
                 if (binding.bottomNavigation.selectedItemId != R.id.nav_people) {
@@ -559,16 +559,16 @@ class MainActivity : AppCompatActivity() {
                     if (currentFragment !is HomeFragment) loadFragment(HomeFragment())
                     true
                 }
-                R.id.nav_schedule -> {
-                    if (currentFragment !is com.anonymousassociate.betterpantry.ui.ScheduleFragment) loadFragment(com.anonymousassociate.betterpantry.ui.ScheduleFragment())
-                    true
-                }
                 R.id.nav_people -> {
                     if (currentFragment !is com.anonymousassociate.betterpantry.ui.PeopleFragment) loadFragment(com.anonymousassociate.betterpantry.ui.PeopleFragment())
                     true
                 }
                 R.id.nav_notifications -> {
                     if (currentFragment !is NotificationsFragment) loadFragment(NotificationsFragment())
+                    true
+                }
+                R.id.nav_settings -> {
+                    if (currentFragment !is com.anonymousassociate.betterpantry.ui.SettingsFragment) loadFragment(com.anonymousassociate.betterpantry.ui.SettingsFragment())
                     true
                 }
                 else -> false
@@ -737,6 +737,11 @@ class MainActivity : AppCompatActivity() {
                             repository.getNotifications(forceRefresh = false)
                             repository.checkAndSendNewNotifications(this@MainActivity)
                             
+                            // Fetch Availability & Time Off (will only fetch if stale)
+                            repository.getAvailability(forceRefresh = false)
+                            repository.getMaxHours(forceRefresh = false)
+                            repository.getTimeOff(forceRefresh = false)
+                            
                             // For Team Members, we need parameters. 
                             // We can use the current schedule's range or default to "Next 30 days" which matches getSchedule(30).
                             // getSchedule(30) fetches 30 days.
@@ -766,6 +771,8 @@ class MainActivity : AppCompatActivity() {
                                 (currentFragment as? com.anonymousassociate.betterpantry.ui.PeopleFragment)?.refreshDataFromCache()
                             } else if (currentFragment is NotificationsFragment) {
                                 currentFragment.refreshDataFromCache()
+                            } else if (currentFragment is com.anonymousassociate.betterpantry.ui.AvailabilityFragment) {
+                                (currentFragment as? com.anonymousassociate.betterpantry.ui.AvailabilityFragment)?.refreshDataFromCache()
                             }
 
                         } catch (e: Exception) {

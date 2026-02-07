@@ -67,18 +67,6 @@
 
         </com.google.android.material.button.MaterialButtonToggleGroup>
 
-        <ImageButton
-            android:id="@+id/settingsButton"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:layout_alignParentEnd="true"
-            android:layout_centerVertical="true"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:src="@drawable/ic_settings"
-            android:scaleType="centerInside"
-            android:contentDescription="Settings"
-            android:tint="@color/text_primary" />
-
     </RelativeLayout>
 
     <!-- Container for List and Empty State -->

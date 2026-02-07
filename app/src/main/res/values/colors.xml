@@ -18,4 +18,5 @@
     <color name="work_day_green_ripple">#336B8E6F</color>
     <color name="available_shift_dot">#90C695</color>
     <color name="nav_text_secondary">#757575</color>
+    <color name="time_off_pastel_yellow">#CFA855</color>
 </resources>

@@ -102,7 +102,6 @@ class NotificationsFragment : Fragment() {
         toggleGroup = view.findViewById(R.id.toggleGroup)
         emptyStateText = view.findViewById(R.id.emptyStateText)
         permissionButton = view.findViewById(R.id.permissionButton)
-        val settingsButton: android.widget.ImageButton = view.findViewById(R.id.settingsButton)
         val notificationSettingsButton: android.widget.ImageButton = view.findViewById(R.id.notificationSettingsButton)
         
         val rootContainer = view.findViewById<View>(R.id.rootContainer)
@@ -118,7 +117,6 @@ class NotificationsFragment : Fragment() {
             insets
         }
 
-        settingsButton.setOnClickListener { showSettingsMenu(it) }
         notificationSettingsButton.setOnClickListener { showNotificationSettings() }
 
         permissionButton.setOnClickListener {
@@ -198,43 +196,6 @@ class NotificationsFragment : Fragment() {
 
     private fun showNotificationSettings() {
         NotificationSettingsDialog(requireContext()).show()
-    }
-
-    private fun showSettingsMenu(anchor: View) {
-        val popup = android.widget.PopupMenu(requireContext(), anchor)
-        popup.menuInflater.inflate(R.menu.settings_menu, popup.menu)
-        
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-            popup.setForceShowIcon(true)
-        }
-
-        popup.setOnMenuItemClickListener { item ->
-            val mainActivity = requireActivity() as? com.anonymousassociate.betterpantry.MainActivity
-            when (item.itemId) {
-                R.id.menu_workday -> {
-                    mainActivity?.openBrowser("https://wd5.myworkday.com/panerabread/learning")
-                    true
-                }
-                R.id.menu_availability -> {
-                    mainActivity?.openBrowser("https://pantry.panerabread.com/gateway/home/#/self-service/availability")
-                    true
-                }
-                R.id.menu_time_off -> {
-                    mainActivity?.openBrowser("https://pantry.panerabread.com/gateway/home/#/self-service/rto-franchise")
-                    true
-                }
-                R.id.menu_corc -> {
-                    mainActivity?.openBrowser("https://login.microsoftonline.com/login.srf?wa=wsignin1.0&whr=panerabread.com&wreply=https://panerabread.sharepoint.com/sites/Home/SitePages/CORCHome.aspx")
-                    true
-                }
-                R.id.menu_logout -> {
-                    mainActivity?.logout()
-                    true
-                }
-                else -> false
-            }
-        }
-        popup.show()
     }
 
     private fun setupRecyclerView() {

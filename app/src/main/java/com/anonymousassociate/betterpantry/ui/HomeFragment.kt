@@ -31,6 +31,7 @@ import com.anonymousassociate.betterpantry.ui.adapters.CalendarAdapter
 import com.anonymousassociate.betterpantry.ui.adapters.ShiftAdapter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -66,6 +67,7 @@ class HomeFragment : Fragment() {
     private lateinit var updateCard: androidx.cardview.widget.CardView
     private lateinit var updateDivider: View
     private lateinit var moneyPreferences: com.anonymousassociate.betterpantry.MoneyPreferences
+    private lateinit var settingsPreferences: com.anonymousassociate.betterpantry.SettingsPreferences
 
     private var scheduleData: ScheduleData? = null
     private var moneyDialog: Dialog? = null
@@ -86,6 +88,7 @@ class HomeFragment : Fragment() {
 
         authManager = AuthManager(requireContext())
         moneyPreferences = com.anonymousassociate.betterpantry.MoneyPreferences(requireContext())
+        settingsPreferences = com.anonymousassociate.betterpantry.SettingsPreferences(requireContext())
 
         calendarRecyclerView = view.findViewById(R.id.calendarRecyclerView)
         shiftsRecyclerView = view.findViewById(R.id.shiftsRecyclerView)
@@ -97,7 +100,7 @@ class HomeFragment : Fragment() {
         swipeRefreshLayout = view.findViewById(R.id.swipeRefreshLayout)
         updateCard = view.findViewById(R.id.updateCard)
         updateDivider = view.findViewById(R.id.updateDivider)
-        val settingsButton: android.widget.ImageButton = view.findViewById(R.id.settingsButton)
+        val availabilityButton: android.widget.ImageButton = view.findViewById(R.id.availabilityButton)
         val moneyButton: android.widget.ImageButton = view.findViewById(R.id.moneyButton)
         
         val nestedScrollView = view.findViewById<androidx.core.widget.NestedScrollView>(R.id.nestedScrollView)
@@ -112,7 +115,13 @@ class HomeFragment : Fragment() {
             insets
         }
 
-        settingsButton.setOnClickListener { showSettingsMenu(it) }
+        availabilityButton.setOnClickListener {
+            parentFragmentManager.beginTransaction()
+                .replace(R.id.fragmentContainer, AvailabilityFragment())
+                .addToBackStack(null)
+                .commit()
+        }
+        
         moneyButton.setOnClickListener { showMoneySettingsDialog() }
 
         setupCalendar()
@@ -286,43 +295,6 @@ class HomeFragment : Fragment() {
         return totalHours.toFloat()
     }
 
-    private fun showSettingsMenu(anchor: View) {
-        val popup = android.widget.PopupMenu(requireContext(), anchor)
-        popup.menuInflater.inflate(R.menu.settings_menu, popup.menu)
-        
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-            popup.setForceShowIcon(true)
-        }
-
-        popup.setOnMenuItemClickListener { item ->
-            val mainActivity = requireActivity() as? com.anonymousassociate.betterpantry.MainActivity
-            when (item.itemId) {
-                R.id.menu_workday -> {
-                    mainActivity?.openBrowser("https://wd5.myworkday.com/panerabread/learning")
-                    true
-                }
-                R.id.menu_availability -> {
-                    mainActivity?.openBrowser("https://pantry.panerabread.com/gateway/home/#/self-service/availability")
-                    true
-                }
-                R.id.menu_time_off -> {
-                    mainActivity?.openBrowser("https://pantry.panerabread.com/gateway/home/#/self-service/rto-franchise")
-                    true
-                }
-                R.id.menu_corc -> {
-                    mainActivity?.openBrowser("https://login.microsoftonline.com/login.srf?wa=wsignin1.0&whr=panerabread.com&wreply=https://panerabread.sharepoint.com/sites/Home/SitePages/CORCHome.aspx")
-                    true
-                }
-                R.id.menu_logout -> {
-                    mainActivity?.logout()
-                    true
-                }
-                else -> false
-            }
-        }
-        popup.show()
-    }
-
     fun loadScheduleFromActivity() {
         if (isAdded) {
             loadSchedule()
@@ -396,6 +368,16 @@ class HomeFragment : Fragment() {
             try {
                 // Use Repository
                 val schedule = repository.getSchedule(forceRefresh)
+                
+                // Also fetch Availability/TimeOff/MaxHours to keep cache fresh
+                if (forceRefresh) {
+                    launch(Dispatchers.IO) {
+                        repository.getAvailability(true)
+                        repository.getMaxHours(true)
+                        repository.getTimeOff(true)
+                    }
+                }
+
                 schedule?.let {
                     scheduleData = it
                     // Cache save handled by repository
@@ -456,7 +438,7 @@ class HomeFragment : Fragment() {
     }
 
     private fun displaySchedule(schedule: ScheduleData) {
-        calendarAdapter.updateSchedule(schedule)
+        calendarAdapter.updateSchedule(schedule, scheduleCache.getTimeOff(), settingsPreferences.showAvailabilityOnCalendar)
 
         val distinctShifts = schedule.currentShifts?.distinctBy { it.shiftId }?.sortedBy { it.startDateTime }
         if (distinctShifts != null) {
@@ -963,111 +945,119 @@ class HomeFragment : Fragment() {
                 val availableTracks = scheduleData?.track ?: emptyList()
                 val employeeInfo = scheduleData?.employeeInfo ?: emptyList()
                 
-                // Reuse merge logic (locally implemented)
-                val mergedMembers = mergeData(teamMembers, myShifts, availableTracks, employeeInfo)
-                
-                val coworkerShifts = findCoworkerShifts(shift, mergedMembers, myId)
-                
-                if (coworkerShifts.isNotEmpty()) {
-                    coworkersHeaderWrapper.visibility = View.VISIBLE
-                    coworkersContainer.visibility = View.GONE // Legacy
-                    chartScrollView.visibility = View.VISIBLE
+                lifecycleScope.launch(Dispatchers.Default) {
+                    // Reuse merge logic (locally implemented)
+                    val mergedMembers = mergeData(teamMembers, myShifts, availableTracks, employeeInfo)
                     
-                    shareCoworkersButton.setOnClickListener {
-                        val dateStr = try {
-                            val s = LocalDateTime.parse(shift.startDateTime)
-                            s.format(DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy"))
-                        } catch (e: Exception) { "Schedule" }
-                        
-                        val workstationId = shift.workstationId ?: shift.workstationCode ?: ""
-                        val workstationName = getWorkstationDisplayName(workstationId, shift.workstationName)
-                        
-                        val owner = if (isAvailable) "Available Shift" else {
-                            val name = getEmployeeName(shift.employeeId)
-                            if (shift.employeeId == authManager.getUserId()) "${authManager.getFirstName()} ${authManager.getLastName()}" else name
-                        }
-                        val subHeader = "$workstationName - $owner"
-                        
-                        com.anonymousassociate.betterpantry.utils.ShareUtil.shareView(requireContext(), chartContainer, "Share Schedule", headerText = dateStr, subHeaderText = subHeader)
-                    }
+                    val coworkerShifts = findCoworkerShifts(shift, mergedMembers, myId)
                     
-                    val daySchedule = DaySchedule(LocalDate.now(), coworkerShifts)
-                    val shiftStart = try { LocalDateTime.parse(shift.startDateTime) } catch(e: Exception) { null }
-                    val shiftEnd = try { LocalDateTime.parse(shift.endDateTime) } catch(e: Exception) { null }
-                    
-                    chartScrollView.post {
-                        val width = chartScrollView.width
-                        val safeWidth = if (width > 0) width else resources.displayMetrics.widthPixels - 110.dpToPx() // Approx padding (16+20+16 = 52 * 2 = 104)
+                    withContext(Dispatchers.Main) {
+                        if (coworkerShifts.isNotEmpty()) {
+                            coworkersHeaderWrapper.visibility = View.VISIBLE
+                            coworkersContainer.visibility = View.GONE // Legacy
+                            chartScrollView.visibility = View.VISIBLE
+                            
+                            shareCoworkersButton.setOnClickListener {
+                                val dateStr = try {
+                                    val s = LocalDateTime.parse(shift.startDateTime)
+                                    s.format(DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy"))
+                                } catch (e: Exception) { "Schedule" }
+                                
+                                val workstationId = shift.workstationId ?: shift.workstationCode ?: ""
+                                val workstationName = getWorkstationDisplayName(workstationId, shift.workstationName)
+                                
+                                val owner = if (isAvailable) "Available Shift" else {
+                                    val name = getEmployeeName(shift.employeeId)
+                                    if (shift.employeeId == authManager.getUserId()) "${authManager.getFirstName()} ${authManager.getLastName()}" else name
+                                }
+                                val subHeader = "$workstationName - $owner"
+                                
+                                com.anonymousassociate.betterpantry.utils.ShareUtil.shareView(requireContext(), chartContainer, "Share Schedule", headerText = dateStr, subHeaderText = subHeader)
+                            }
+                            
+                            val daySchedule = DaySchedule(LocalDate.now(), coworkerShifts)
+                            val shiftStart = try { LocalDateTime.parse(shift.startDateTime) } catch(e: Exception) { null }
+                            val shiftEnd = try { LocalDateTime.parse(shift.endDateTime) } catch(e: Exception) { null }
+                            
+                            chartScrollView.post {
+                                val width = chartScrollView.width
+                                val safeWidth = if (width > 0) width else resources.displayMetrics.widthPixels - 110.dpToPx() // Approx padding (16+20+16 = 52 * 2 = 104)
 
-                        ChartRenderer.drawChart(
-                            requireContext(),
-                            chartContainer,
-                            daySchedule,
-                            isExpanded = false,
-                            containerWidth = safeWidth,
-                            fixedStartTime = shiftStart,
-                            fixedEndTime = shiftEnd,
-                            listener = object : ScheduleInteractionListener {
-                                override fun onExpandClick(day: DaySchedule) {}
-                                override fun onShiftClick(clickedShift: EnrichedShift) {
-                                    // Recursion logic
-                                    if (clickedShift.shift.shiftId != shift.shiftId?.toLongOrNull()) {
-                                        val newShift = clickedShift.shift.toShift()
-                                        val title = if (clickedShift.isAvailable) {
-                                            "Available Shift"
-                                        } else {
-                                            "${clickedShift.firstName} ${clickedShift.lastName ?: ""}".trim()
+                                ChartRenderer.drawChart(
+                                    requireContext(),
+                                    chartContainer,
+                                    daySchedule,
+                                    isExpanded = false,
+                                    containerWidth = safeWidth,
+                                    fixedStartTime = shiftStart,
+                                    fixedEndTime = shiftEnd,
+                                    listener = object : ScheduleInteractionListener {
+                                        override fun onExpandClick(day: DaySchedule) {}
+                                        override fun onShiftClick(clickedShift: EnrichedShift) {
+                                            // Recursion logic
+                                            if (clickedShift.shift.shiftId != shift.shiftId?.toLongOrNull()) {
+                                                val newShift = clickedShift.shift.toShift()
+                                                val title = if (clickedShift.isAvailable) {
+                                                    "Available Shift"
+                                                } else {
+                                                    "${clickedShift.firstName} ${clickedShift.lastName ?: ""}".trim()
+                                                }
+                                                if (clickedShift.isAvailable) {
+                                                     showShiftDetailDialog(emptyList(), listOf(newShift), customTitle = title, isNested = true)
+                                                } else {
+                                                     showShiftDetailDialog(listOf(newShift), emptyList(), customTitle = title, isNested = true)
+                                                }
+                                            }
                                         }
-                                        if (clickedShift.isAvailable) {
-                                             showShiftDetailDialog(emptyList(), listOf(newShift), customTitle = title, isNested = true)
-                                        } else {
-                                             showShiftDetailDialog(listOf(newShift), emptyList(), customTitle = title, isNested = true)
-                                        }
+                                    },
+                                    fitToWidth = true
+                                )
+                            }
+
+                            expandCoworkersButton.setOnClickListener {
+                                val day = try { LocalDate.parse(shift.startDateTime?.substring(0, 10)) } catch (e: Exception) { LocalDate.now() }
+                                val allShiftsForDay = mutableListOf<EnrichedShift>()
+                                
+                                mergedMembers.forEach { tm ->
+                                    val isMe = tm.associate?.employeeId == myId
+                                    val isAvailable = tm.associate?.employeeId == "AVAILABLE_SHIFT"
+                                    val firstName = if (!tm.associate?.preferredName.isNullOrEmpty()) tm.associate?.preferredName ?: "Unknown" else tm.associate?.firstName ?: "Unknown"
+                                    val lastName = tm.associate?.lastName
+                                    
+                                    tm.shifts?.forEach { s ->
+                                        try {
+                                            if (s.startDateTime?.startsWith(day.toString()) == true) {
+                                                val cafeInfo = scheduleData?.cafeList?.firstOrNull { 
+                                                    it.departmentName?.contains(s.cafeNumber ?: "") == true 
+                                                } ?: scheduleData?.cafeList?.firstOrNull()
+                                                
+                                                val location = cafeInfo?.let { cafe ->
+                                                    val address = cafe.address
+                                                    "#${s.cafeNumber ?: ""} - ${address?.addressLine ?: ""}, ${address?.city ?: ""}, ${address?.state ?: ""}"
+                                                } ?: "#${s.cafeNumber ?: ""}"
+
+                                                allShiftsForDay.add(
+                                                    EnrichedShift(
+                                                        shift = s,
+                                                        firstName = firstName,
+                                                        lastName = lastName,
+                                                        isMe = isMe,
+                                                        isAvailable = isAvailable,
+                                                        location = location
+                                                    )
+                                                )
+                                            }
+                                        } catch(e: Exception) {}
                                     }
                                 }
-                            },
-                            fitToWidth = true
-                        )
-                    }
-
-                    expandCoworkersButton.setOnClickListener {
-                        val day = try { LocalDate.parse(shift.startDateTime?.substring(0, 10)) } catch (e: Exception) { LocalDate.now() }
-                        val allShiftsForDay = mutableListOf<EnrichedShift>()
-                        
-                        mergedMembers.forEach { tm ->
-                            val isMe = tm.associate?.employeeId == myId
-                            val isAvailable = tm.associate?.employeeId == "AVAILABLE_SHIFT"
-                            val firstName = if (!tm.associate?.preferredName.isNullOrEmpty()) tm.associate?.preferredName ?: "Unknown" else tm.associate?.firstName ?: "Unknown"
-                            val lastName = tm.associate?.lastName
-                            
-                            tm.shifts?.forEach { s ->
-                                try {
-                                    if (s.startDateTime?.startsWith(day.toString()) == true) {
-                                        val cafeInfo = scheduleData?.cafeList?.firstOrNull { 
-                                            it.departmentName?.contains(s.cafeNumber ?: "") == true 
-                                        } ?: scheduleData?.cafeList?.firstOrNull()
-                                        
-                                        val location = cafeInfo?.let { cafe ->
-                                            val address = cafe.address
-                                            "#${s.cafeNumber ?: ""} - ${address?.addressLine ?: ""}, ${address?.city ?: ""}, ${address?.state ?: ""}"
-                                        } ?: "#${s.cafeNumber ?: ""}"
-
-                                        allShiftsForDay.add(
-                                            EnrichedShift(
-                                                shift = s,
-                                                firstName = firstName,
-                                                lastName = lastName,
-                                                isMe = isMe,
-                                                isAvailable = isAvailable,
-                                                location = location
-                                            )
-                                        )
-                                    }
-                                } catch(e: Exception) {}
+                                
+                                showDayScheduleDialog(DaySchedule(day, allShiftsForDay.sortedBy { it.shift.startDateTime }), shift)
                             }
+                        } else {
+                            coworkersHeaderWrapper.visibility = View.GONE
+                            coworkersContainer.visibility = View.GONE
+                            chartScrollView.visibility = View.GONE
                         }
-                        
-                        showDayScheduleDialog(DaySchedule(day, allShiftsForDay.sortedBy { it.shift.startDateTime }), shift)
                     }
                 }
             }

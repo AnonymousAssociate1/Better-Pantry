@@ -169,6 +169,58 @@ class PantryRepository(private val apiService: PantryApiService, private val sch
         return apiService.undeleteNotification(notificationId)
     }
     
+    suspend fun getAvailability(forceRefresh: Boolean = false): com.anonymousassociate.betterpantry.models.AvailabilityResponse? {
+        if (!forceRefresh && !scheduleCache.isAvailabilityStale()) {
+            val cached = scheduleCache.getAvailability()
+            if (cached != null) return cached
+        }
+        val data = apiService.getAvailability()
+        if (data != null) {
+            scheduleCache.saveAvailability(data)
+        }
+        return data ?: scheduleCache.getAvailability()
+    }
+
+    suspend fun getMaxHours(forceRefresh: Boolean = false): com.anonymousassociate.betterpantry.models.MaxHoursResponse? {
+        if (!forceRefresh && !scheduleCache.isAvailabilityStale()) { // Use same staleness check
+            val cached = scheduleCache.getMaxHours()
+            if (cached != null) return cached
+        }
+        val data = apiService.getMaxHours()
+        if (data != null) {
+            scheduleCache.saveMaxHours(data)
+        }
+        return data ?: scheduleCache.getMaxHours()
+    }
+    
+    suspend fun getTimeOff(forceRefresh: Boolean = false): List<com.anonymousassociate.betterpantry.models.TimeOffRequest>? {
+        if (!forceRefresh && !scheduleCache.isAvailabilityStale()) { // Reuse staleness for simplicity
+            val cached = scheduleCache.getTimeOff()
+            if (cached != null) return cached
+        }
+        val data = apiService.getTimeOff()
+        if (data != null) {
+            scheduleCache.saveTimeOff(data)
+        }
+        return data ?: scheduleCache.getTimeOff()
+    }
+    
+    suspend fun requestTimeOff(payload: String): Boolean {
+        val success = apiService.requestTimeOff(payload)
+        if (success) {
+            getTimeOff(forceRefresh = true)
+        }
+        return success
+    }
+    
+    suspend fun cancelTimeOff(payload: String): Boolean {
+        val success = apiService.cancelTimeOff(payload)
+        if (success) {
+            getTimeOff(forceRefresh = true)
+        }
+        return success
+    }
+    
     suspend fun getLatestRelease() = apiService.getLatestRelease()
 
     fun sendTestNotification(context: Context, notification: com.anonymousassociate.betterpantry.models.NotificationData) {

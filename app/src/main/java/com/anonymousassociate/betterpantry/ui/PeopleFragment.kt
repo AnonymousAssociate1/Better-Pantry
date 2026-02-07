@@ -7,6 +7,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
+import android.widget.ImageButton
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
@@ -65,13 +66,19 @@ class PeopleFragment : Fragment() {
             searchBar.setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_people, 0, 0, 0)
         }
         
+        val calendarButton = view.findViewById<ImageButton>(R.id.calendarButton)
+        calendarButton.setOnClickListener {
+            val scheduleFragment = ScheduleFragment()
+            parentFragmentManager.beginTransaction()
+                .replace(R.id.fragmentContainer, scheduleFragment)
+                .addToBackStack(null)
+                .commit()
+        }
+        
         emptyStateText = view.findViewById(R.id.emptyStateText)
         updatedText = view.findViewById(R.id.updatedText)
         swipeRefreshLayout = view.findViewById(R.id.swipeRefreshLayout)
         
-        val settingsButton: android.widget.ImageButton = view.findViewById(R.id.settingsButton)
-        settingsButton.setOnClickListener { showSettingsMenu(it) }
-
         androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(swipeRefreshLayout) { v, insets ->
             val bars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
             // Apply top padding to move header down. 
@@ -227,43 +234,6 @@ class PeopleFragment : Fragment() {
 
 
 
-    private fun showSettingsMenu(anchor: View) {
-        val popup = android.widget.PopupMenu(requireContext(), anchor)
-        popup.menuInflater.inflate(R.menu.settings_menu, popup.menu)
-        
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-            popup.setForceShowIcon(true)
-        }
-
-        popup.setOnMenuItemClickListener { item ->
-            val mainActivity = requireActivity() as? com.anonymousassociate.betterpantry.MainActivity
-            when (item.itemId) {
-                R.id.menu_workday -> {
-                    mainActivity?.openBrowser("https://wd5.myworkday.com/panerabread/learning")
-                    true
-                }
-                R.id.menu_availability -> {
-                    mainActivity?.openBrowser("https://pantry.panerabread.com/gateway/home/#/self-service/availability")
-                    true
-                }
-                R.id.menu_time_off -> {
-                    mainActivity?.openBrowser("https://pantry.panerabread.com/gateway/home/#/self-service/rto-franchise")
-                    true
-                }
-                R.id.menu_corc -> {
-                    mainActivity?.openBrowser("https://login.microsoftonline.com/login.srf?wa=wsignin1.0&whr=panerabread.com&wreply=https://panerabread.sharepoint.com/sites/Home/SitePages/CORCHome.aspx")
-                    true
-                }
-                R.id.menu_logout -> {
-                    mainActivity?.logout()
-                    true
-                }
-                else -> false
-            }
-        }
-        popup.show()
-    }
-
     fun refreshDataFromCache() {
         if (!isAdded) return
         val cachedTeam = scheduleCache.getTeamSchedule() // Unified cache
@@ -305,6 +275,12 @@ class PeopleFragment : Fragment() {
         
         if (schedule == null && forceRefresh) {
              schedule = repository.getSchedule(forceRefresh = true)
+             // Also fetch Availability/TimeOff/MaxHours
+             kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                 repository.getAvailability(true)
+                 repository.getMaxHours(true)
+                 repository.getTimeOff(true)
+             }
         }
 
         if (schedule != null) {

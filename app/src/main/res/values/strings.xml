@@ -1,10 +1,13 @@
 <resources>
     <string name="app_name">Better Pantry</string>
     <string name="release_notes">
+**Features**\n
+**•** Added availability and time off\n
+**•** Moved access to "Schedule" page into the People tab\n
+**•** Removed old settings gear and added settings page\n
+\n
 **Fixes**\n
-**•** Updating info is ACTUALLY consistent and functional\n
-**•** Fixed some issues rendering and retrieving data on the people page\n
-**•** Available shifts properly render\n
+**•** Various loading issues presented by adding time off\n
     </string>
 <!--    **Features**\n-->
 <!--    **•** Added option to show pay for shifts on home page\n-->

@@ -21,11 +21,15 @@ class CalendarAdapter(
     private var scheduleData: ScheduleData? = null
     private val workDates = mutableSetOf<LocalDate>()
     private val availableShiftDates = mutableSetOf<LocalDate>()
+    private val approvedTimeOffDates = mutableSetOf<LocalDate>()
+    private val pendingTimeOffDates = mutableSetOf<LocalDate>()
 
-    fun updateSchedule(schedule: ScheduleData) {
+    fun updateSchedule(schedule: ScheduleData, timeOffRequests: List<com.anonymousassociate.betterpantry.models.TimeOffRequest>? = null, showAvailability: Boolean = true) {
         scheduleData = schedule
         workDates.clear()
         availableShiftDates.clear()
+        approvedTimeOffDates.clear()
+        pendingTimeOffDates.clear()
 
         // Parse work dates from currentShifts
         schedule.currentShifts?.forEach { shift ->
@@ -40,13 +44,33 @@ class CalendarAdapter(
         }
 
         // Parse available shift dates
-        schedule.track?.forEach { track ->
-            if (track.type == "AVAILABLE" && track.primaryShiftRequest?.state == "AVAILABLE") {
-                track.primaryShiftRequest?.shift?.startDateTime?.let { dateTimeStr ->
+        if (showAvailability) {
+            schedule.track?.forEach { track ->
+                if (track.type == "AVAILABLE" && track.primaryShiftRequest?.state == "AVAILABLE") {
+                    track.primaryShiftRequest?.shift?.startDateTime?.let { dateTimeStr ->
+                        try {
+                            val date = LocalDate.parse(dateTimeStr.substring(0, 10))
+                            availableShiftDates.add(date)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Parse Time Off
+        if (showAvailability) {
+            timeOffRequests?.forEach { req ->
+                if (req.timeOffDate != null) {
                     try {
-                        val date = LocalDate.parse(dateTimeStr.substring(0, 10))
-                        availableShiftDates.add(date)
-                    } catch (e: Exception) {
+                        val date = LocalDate.parse(req.timeOffDate)
+                        if (req.status == "APPROVED") {
+                            approvedTimeOffDates.add(date)
+                        } else if (req.status == "PENDING") {
+                            pendingTimeOffDates.add(date)
+                        }
+                    } catch(e: Exception) {
                         e.printStackTrace()
                     }
                 }
@@ -81,35 +105,55 @@ class CalendarAdapter(
 
             val isToday = date == today
             val hasShift = workDates.contains(date)
+            val isApprovedOff = approvedTimeOffDates.contains(date)
+            val isPendingOff = pendingTimeOffDates.contains(date)
 
             // Reset styling
             todayCircle.visibility = View.GONE
 
+            // Determine Background & Text Color
+            // Priority: Shift > Approved Off > Pending Off > Default
             when {
-                // Today with shift: green background, white text, white circle (inner indicator)
-                isToday && hasShift -> {
+                // Shift (Work)
+                hasShift -> {
                     dateCard.setCardBackgroundColor(ContextCompat.getColor(itemView.context, R.color.work_day_green))
                     dateText.setTextColor(Color.WHITE)
-                    dateText.setTextColor(ContextCompat.getColor(itemView.context, R.color.text_primary))
-                    todayCircle.visibility = View.VISIBLE
-                    todayCircle.setBackgroundResource(R.drawable.today_background_white)
+                    if (isToday) {
+                        // User requested primary color for Today
+                        dateText.setTextColor(ContextCompat.getColor(itemView.context, R.color.text_primary))
+                        todayCircle.visibility = View.VISIBLE
+                        todayCircle.setBackgroundResource(R.drawable.today_background_white)
+                    }
                 }
-                // Today without shift: card background, primary text, card-colored circle with border
-                isToday && !hasShift -> {
-                    dateCard.setCardBackgroundColor(ContextCompat.getColor(itemView.context, R.color.card_background_color))
-                    dateText.setTextColor(ContextCompat.getColor(itemView.context, R.color.text_primary))
-                    todayCircle.visibility = View.VISIBLE
-                    todayCircle.setBackgroundResource(R.drawable.today_background)
-                }
-                // Day with shift: green background, white text
-                !isToday && hasShift -> {
-                    dateCard.setCardBackgroundColor(ContextCompat.getColor(itemView.context, R.color.work_day_green))
+                
+                // Approved Time Off (Darker Yellow)
+                isApprovedOff -> {
+                    dateCard.setCardBackgroundColor(ContextCompat.getColor(itemView.context, R.color.time_off_pastel_yellow))
                     dateText.setTextColor(Color.WHITE)
+                    if (isToday) {
+                        todayCircle.visibility = View.VISIBLE
+                        todayCircle.setBackgroundResource(R.drawable.today_background_white)
+                    }
                 }
-                // Day without shift: card background, primary text
+                
+                // Pending Time Off (Orange)
+                isPendingOff -> {
+                    dateCard.setCardBackgroundColor(ContextCompat.getColor(itemView.context, android.R.color.holo_orange_dark))
+                    dateText.setTextColor(Color.WHITE)
+                    if (isToday) {
+                        todayCircle.visibility = View.VISIBLE
+                        todayCircle.setBackgroundResource(R.drawable.today_background_white)
+                    }
+                }
+                
+                // Default
                 else -> {
                     dateCard.setCardBackgroundColor(ContextCompat.getColor(itemView.context, R.color.card_background_color))
                     dateText.setTextColor(ContextCompat.getColor(itemView.context, R.color.text_primary))
+                    if (isToday) {
+                        todayCircle.visibility = View.VISIBLE
+                        todayCircle.setBackgroundResource(R.drawable.today_background)
+                    }
                 }
             }
 

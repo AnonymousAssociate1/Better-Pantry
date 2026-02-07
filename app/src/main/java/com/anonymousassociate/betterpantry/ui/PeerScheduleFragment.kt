@@ -23,7 +23,9 @@ import com.anonymousassociate.betterpantry.models.*
 import com.anonymousassociate.betterpantry.ui.adapters.CalendarAdapter
 import com.anonymousassociate.betterpantry.ui.adapters.ShiftAdapter
 import com.google.gson.Gson
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -111,49 +113,9 @@ class PeerScheduleFragment : Fragment() {
 
         availableShiftsRecyclerView.addItemDecoration(DateDividerItemDecoration(requireContext()))
         
-        val settingsButton: android.widget.ImageButton = view.findViewById(R.id.settingsButton)
-        settingsButton.setOnClickListener { showSettingsMenu(it) }
-        
         val firstName = if (!peer?.preferredName.isNullOrEmpty()) peer?.preferredName else peer?.firstName
         val name = "$firstName ${peer?.lastName}"
         nameText.text = name.uppercase()
-    }
-
-    private fun showSettingsMenu(anchor: View) {
-        val popup = android.widget.PopupMenu(requireContext(), anchor)
-        popup.menuInflater.inflate(R.menu.settings_menu, popup.menu)
-        
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-            popup.setForceShowIcon(true)
-        }
-
-        popup.setOnMenuItemClickListener { item ->
-            val mainActivity = requireActivity() as? com.anonymousassociate.betterpantry.MainActivity
-            when (item.itemId) {
-                R.id.menu_workday -> {
-                    mainActivity?.openBrowser("https://wd5.myworkday.com/panerabread/learning")
-                    true
-                }
-                R.id.menu_availability -> {
-                    mainActivity?.openBrowser("https://pantry.panerabread.com/gateway/home/#/self-service/availability")
-                    true
-                }
-                R.id.menu_time_off -> {
-                    mainActivity?.openBrowser("https://pantry.panerabread.com/gateway/home/#/self-service/rto-franchise")
-                    true
-                }
-                R.id.menu_corc -> {
-                    mainActivity?.openBrowser("https://login.microsoftonline.com/login.srf?wa=wsignin1.0&whr=panerabread.com&wreply=https://panerabread.sharepoint.com/sites/Home/SitePages/CORCHome.aspx")
-                    true
-                }
-                R.id.menu_logout -> {
-                    mainActivity?.logout()
-                    true
-                }
-                else -> false
-            }
-        }
-        popup.show()
     }
 
     private fun setupListeners() {
@@ -471,56 +433,60 @@ class PeerScheduleFragment : Fragment() {
         }
 
         if (!isNested) {
-            coworkersHeaderWrapper.visibility = View.VISIBLE
-            val teamMembers = getMergedTeamMembers()
-            val coworkerShifts = findCoworkerShifts(shift.toTeamShift(), teamMembers, shift.employeeId)
+            lifecycleScope.launch(Dispatchers.Default) {
+                val teamMembers = getMergedTeamMembers()
+                val coworkerShifts = findCoworkerShifts(shift.toTeamShift(), teamMembers, shift.employeeId)
 
-            if (coworkerShifts.isNotEmpty()) {
-                val chartScrollView = cardView.findViewById<android.widget.HorizontalScrollView>(R.id.coworkersChartScrollView)
-                chartScrollView.visibility = View.VISIBLE
-                expandCoworkersButton.setOnClickListener { showDayScheduleDialog(LocalDate.parse(shift.startDateTime?.substring(0, 10)), shift) }
-                val chartContainer = cardView.findViewById<RelativeLayout>(R.id.coworkersChartContainer)
-                
-                shareCoworkersButton.setOnClickListener {
-                     val dateStr = try {
-                         val s = LocalDateTime.parse(shift.startDateTime)
-                         s.format(DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy"))
-                     } catch (e: Exception) { "Schedule" }
-                     
-                     val workstationId = shift.workstationId ?: shift.workstationCode ?: ""
-                     val workstationName = getWorkstationDisplayName(workstationId, shift.workstationName)
-                     
-                     val owner = if (isAvailable) "Available Shift" else {
-                         val name = getEmployeeName(shift.employeeId)
-                         if (shift.employeeId == authManager.getUserId()) "${authManager.getFirstName()} ${authManager.getLastName()}" else name
-                     }
-                     val subHeader = "$workstationName - $owner"
-                     
-                     com.anonymousassociate.betterpantry.utils.ShareUtil.shareView(requireContext(), chartContainer, "Share Schedule", headerText = dateStr, subHeaderText = subHeader)
-                }
-                
-                chartScrollView.post {
-                    val width = chartScrollView.width
-                    val safeWidth = if (width > 0) width else resources.displayMetrics.widthPixels - 100
-                    ChartRenderer.drawChart(requireContext(), chartContainer, DaySchedule(LocalDate.now(), coworkerShifts), false,
-                        containerWidth = safeWidth,
-                        fixedStartTime = LocalDateTime.parse(shift.startDateTime), fixedEndTime = LocalDateTime.parse(shift.endDateTime),
-                        listener = object : ScheduleInteractionListener {
-                            override fun onExpandClick(day: DaySchedule) { expandCoworkersButton.performClick() }
-                            override fun onShiftClick(clickedShift: EnrichedShift) {
-                                if (clickedShift.shift.shiftId.toString() != shift.shiftId) {
-                                    val title = if (clickedShift.isAvailable) {
-                                        "Available Shift"
-                                    } else {
-                                        "${clickedShift.firstName} ${clickedShift.lastName ?: ""}".trim()
+                withContext(Dispatchers.Main) {
+                    if (coworkerShifts.isNotEmpty()) {
+                        coworkersHeaderWrapper.visibility = View.VISIBLE
+                        val chartScrollView = cardView.findViewById<android.widget.HorizontalScrollView>(R.id.coworkersChartScrollView)
+                        chartScrollView.visibility = View.VISIBLE
+                        expandCoworkersButton.setOnClickListener { showDayScheduleDialog(LocalDate.parse(shift.startDateTime?.substring(0, 10)), shift) }
+                        val chartContainer = cardView.findViewById<RelativeLayout>(R.id.coworkersChartContainer)
+                        
+                        shareCoworkersButton.setOnClickListener {
+                             val dateStr = try {
+                                 val s = LocalDateTime.parse(shift.startDateTime)
+                                 s.format(DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy"))
+                             } catch (e: Exception) { "Schedule" }
+                             
+                             val workstationId = shift.workstationId ?: shift.workstationCode ?: ""
+                             val workstationName = getWorkstationDisplayName(workstationId, shift.workstationName)
+                             
+                             val owner = if (isAvailable) "Available Shift" else {
+                                 val name = getEmployeeName(shift.employeeId)
+                                 if (shift.employeeId == authManager.getUserId()) "${authManager.getFirstName()} ${authManager.getLastName()}" else name
+                             }
+                             val subHeader = "$workstationName - $owner"
+                             
+                             com.anonymousassociate.betterpantry.utils.ShareUtil.shareView(requireContext(), chartContainer, "Share Schedule", headerText = dateStr, subHeaderText = subHeader)
+                        }
+                        
+                        chartScrollView.post {
+                            val width = chartScrollView.width
+                            val safeWidth = if (width > 0) width else resources.displayMetrics.widthPixels - 100
+                            ChartRenderer.drawChart(requireContext(), chartContainer, DaySchedule(LocalDate.now(), coworkerShifts), false,
+                                containerWidth = safeWidth,
+                                fixedStartTime = LocalDateTime.parse(shift.startDateTime), fixedEndTime = LocalDateTime.parse(shift.endDateTime),
+                                listener = object : ScheduleInteractionListener {
+                                    override fun onExpandClick(day: DaySchedule) { expandCoworkersButton.performClick() }
+                                    override fun onShiftClick(clickedShift: EnrichedShift) {
+                                        if (clickedShift.shift.shiftId.toString() != shift.shiftId) {
+                                            val title = if (clickedShift.isAvailable) {
+                                                "Available Shift"
+                                            } else {
+                                                "${clickedShift.firstName} ${clickedShift.lastName ?: ""}".trim()
+                                            }
+                                            showShiftDetailDialog(listOf(clickedShift.shift.toShift(clickedShift.shift.employeeId)), emptyList(), isNested = true, customTitle = title)
+                                        }
                                     }
-                                    showShiftDetailDialog(listOf(clickedShift.shift.toShift(clickedShift.shift.employeeId)), emptyList(), isNested = true, customTitle = title)
-                                }
-                            }
-                        }, fitToWidth = true)
+                                }, fitToWidth = true)
+                        }
+                    } else {
+                        coworkersHeaderWrapper.visibility = View.GONE
+                    }
                 }
-            } else {
-                coworkersHeaderWrapper.visibility = View.GONE
             }
         } else {
             coworkersHeaderWrapper.visibility = View.GONE

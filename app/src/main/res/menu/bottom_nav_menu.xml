@@ -6,11 +6,6 @@
         android:title="Home" />
 
     <item
-        android:id="@+id/nav_schedule"
-        android:icon="@drawable/ic_calendar"
-        android:title="Schedule" />
-
-    <item
         android:id="@+id/nav_people"
         android:icon="@drawable/ic_people"
         android:title="People" />
@@ -19,4 +14,9 @@
         android:id="@+id/nav_notifications"
         android:icon="@drawable/ic_notification"
         android:title="Notifications" />
+
+    <item
+        android:id="@+id/nav_settings"
+        android:icon="@drawable/ic_settings"
+        android:title="Settings" />
 </menu>
