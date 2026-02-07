@@ -14,13 +14,13 @@ class PantryRepository(private val apiService: PantryApiService, private val sch
     suspend fun getSchedule(forceRefresh: Boolean = false): ScheduleData? {
         if (!forceRefresh && !scheduleCache.isScheduleStale()) {
             val cached = scheduleCache.getSchedule()
-            if (cached != null) return cached
+            if (cached != null) return filterSchedule(cached)
         }
         val data = apiService.getSchedule(30)
         if (data != null) {
             scheduleCache.saveSchedule(data)
         }
-        return data
+        return data?.let { filterSchedule(it) }
     }
 
     suspend fun getNotificationCount(): Int {
@@ -38,23 +38,65 @@ class PantryRepository(private val apiService: PantryApiService, private val sch
         if (!forceRefresh && !scheduleCache.isTeamScheduleStale()) {
             val cached = scheduleCache.getTeamSchedule()
             if (cached != null && cached.isNotEmpty()) {
-                 // Optimization: We could check if cached data covers the requested range
-                 // For now, per user instruction "one shared cache", we return what we have
-                 // unless it's stale or forced.
-                 return cached
+                 return filterTeamMembers(cached)
             }
         }
         val data = apiService.getTeamMembers(cafeNo, companyCode, startDateTime, endDateTime)
         if (data != null) {
-            // Merge or Replace? 
-            // If we are fetching 30 days, we should probably replace or merge.
-            // scheduleCache.mergeTeamSchedule(data) // The cache has a merge method
-            // But mergeTeamSchedule distincts by ID.
-            // Let's use saveTeamSchedule for now to be "consistent" with "last update time"
-            // Actually, mergeTeamSchedule calls saveTeamSchedule internally.
             scheduleCache.mergeTeamSchedule(data)
         }
-        return data ?: scheduleCache.getTeamSchedule()
+        // Fetch from cache to ensure merge result is returned (and filtered)
+        // Or just filter 'data' if it was a fresh fetch? 
+        // mergeTeamSchedule returns void. It updates cache. 
+        // We should return the merged result if we want consistency, or just 'data'.
+        // But 'data' is what we just fetched.
+        // If we want "Shared data", we should return the cache state.
+        val fullData = if (data != null) scheduleCache.getTeamSchedule() else data ?: scheduleCache.getTeamSchedule()
+        return fullData?.let { filterTeamMembers(it) }
+    }
+
+    // ... (keep existing methods)
+
+    private fun filterSchedule(data: ScheduleData): ScheduleData {
+        val todayStart = java.time.LocalDate.now().atStartOfDay()
+        
+        val filteredShifts = data.currentShifts?.filter { 
+            try {
+                val end = java.time.LocalDateTime.parse(it.endDateTime)
+                !end.isBefore(todayStart)
+            } catch (e: Exception) { true }
+        }
+        
+        val filteredTrack = data.track?.filter { 
+            try {
+                val end = java.time.LocalDateTime.parse(it.primaryShiftRequest?.shift?.endDateTime)
+                !end.isBefore(todayStart)
+            } catch (e: Exception) { true }
+        }
+        
+        return data.copy(currentShifts = filteredShifts, track = filteredTrack)
+    }
+
+    private fun filterTeamMembers(members: List<TeamMember>): List<TeamMember> {
+        val todayStart = java.time.LocalDate.now().atStartOfDay()
+        
+        return members.map { member ->
+            val filteredShifts = member.shifts?.filter {
+                try {
+                    val end = java.time.LocalDateTime.parse(it.endDateTime)
+                    !end.isBefore(todayStart)
+                } catch (e: Exception) { true }
+            }
+            member.copy(shifts = filteredShifts)
+        }.filter { 
+            // Optional: Filter out members with no shifts? 
+            // The user says "When showing any data like schedules...".
+            // If a member has no shifts left today/future, maybe hide them?
+            // "scheduleFragment they should show as shifts belonging to whoever picked them up last"
+            // If they have 0 shifts in the future, they won't show up in the schedule list anyway (empty rows usually hidden or empty).
+            // Let's keep the member object but with empty shifts, UI handles display.
+            true 
+        }
     }
 
     suspend fun getNotifications(forceRefresh: Boolean = false, page: Int = 0, size: Int = 100): NotificationResponse? {
