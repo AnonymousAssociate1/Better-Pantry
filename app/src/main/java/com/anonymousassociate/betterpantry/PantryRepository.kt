@@ -192,6 +192,38 @@ class PantryRepository(private val apiService: PantryApiService, private val sch
         }
         return data ?: scheduleCache.getMaxHours()
     }
+
+    suspend fun updateAvailability(payload: String): Boolean {
+        val success = apiService.updateAvailability(payload)
+        if (success) {
+            getAvailability(forceRefresh = true)
+        }
+        return success
+    }
+
+    suspend fun cancelAvailability(payload: String): Boolean {
+        val success = apiService.cancelAvailability(payload)
+        if (success) {
+            getAvailability(forceRefresh = true)
+        }
+        return success
+    }
+
+    suspend fun updateMaxHours(paneraId: String, payload: String): Boolean {
+        val success = apiService.updateMaxHours(paneraId, payload)
+        if (success) {
+            getMaxHours(forceRefresh = true)
+        }
+        return success
+    }
+
+    suspend fun cancelMaxHours(paneraId: String): Boolean {
+        val success = apiService.cancelMaxHours(paneraId)
+        if (success) {
+            getMaxHours(forceRefresh = true)
+        }
+        return success
+    }
     
     suspend fun getTimeOff(forceRefresh: Boolean = false): List<com.anonymousassociate.betterpantry.models.TimeOffRequest>? {
         if (!forceRefresh && !scheduleCache.isAvailabilityStale()) { // Reuse staleness for simplicity

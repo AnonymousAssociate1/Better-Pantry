@@ -427,6 +427,106 @@ class PantryApiService(private val authManager: AuthManager) {
         }
     }
 
+    suspend fun updateAvailability(payload: String): Boolean {
+        return withContext(Dispatchers.IO) {
+            try {
+                val token = authManager.getAccessToken() ?: return@withContext false
+                val url = "https://pantry.panerabread.com/apis/selfservice-ui-service/v1/availability"
+
+                val body = payload.toRequestBody("application/json".toMediaTypeOrNull())
+
+                val request = Request.Builder()
+                    .url(url)
+                    .header("Authorization", "Bearer $token")
+                    .header("Accept", "application/json, text/plain, */*")
+                    .header("User-Agent", "Pantry/2.0 Android")
+                    .post(body)
+                    .build()
+
+                val response = client.newCall(request).execute()
+                response.isSuccessful
+            } catch (e: Exception) {
+                e.printStackTrace()
+                false
+            }
+        }
+    }
+
+    suspend fun cancelAvailability(payload: String): Boolean {
+        return withContext(Dispatchers.IO) {
+            try {
+                val token = authManager.getAccessToken() ?: return@withContext false
+                val url = "https://pantry.panerabread.com/apis/selfservice-ui-service/v1/availability/cancel"
+
+                val body = payload.toRequestBody("application/json".toMediaTypeOrNull())
+
+                val request = Request.Builder()
+                    .url(url)
+                    .header("Authorization", "Bearer $token")
+                    .header("Accept", "application/json, text/plain, */*")
+                    .header("User-Agent", "Pantry/2.0 Android")
+                    .post(body)
+                    .build()
+
+                val response = client.newCall(request).execute()
+                response.isSuccessful
+            } catch (e: Exception) {
+                e.printStackTrace()
+                false
+            }
+        }
+    }
+
+    suspend fun updateMaxHours(paneraId: String, payload: String): Boolean {
+        return withContext(Dispatchers.IO) {
+            try {
+                val token = authManager.getAccessToken() ?: return@withContext false
+                val url = "https://pantry.panerabread.com/apis/selfservice-ui-service/v1/max-hours?paneraId=$paneraId"
+
+                val body = payload.toRequestBody("application/json".toMediaTypeOrNull())
+
+                val request = Request.Builder()
+                    .url(url)
+                    .header("Authorization", "Bearer $token")
+                    .header("Accept", "application/json, text/plain, */*")
+                    .header("User-Agent", "Pantry/2.0 Android")
+                    .post(body)
+                    .build()
+
+                val response = client.newCall(request).execute()
+                response.isSuccessful
+            } catch (e: Exception) {
+                e.printStackTrace()
+                false
+            }
+        }
+    }
+
+    suspend fun cancelMaxHours(paneraId: String): Boolean {
+        return withContext(Dispatchers.IO) {
+            try {
+                val token = authManager.getAccessToken() ?: return@withContext false
+                val url = "https://pantry.panerabread.com/apis/selfservice-ui-service/v1/max-hours/cancel?paneraId=$paneraId"
+
+                val body = "{}".toRequestBody("application/json".toMediaTypeOrNull())
+
+                val request = Request.Builder()
+                    .url(url)
+                    .header("Authorization", "Bearer $token")
+                    .header("Accept", "application/json, text/plain, */*")
+                    .header("User-Agent", "Pantry/2.0 Android")
+                    .post(body)
+                    .build()
+
+                val response = client.newCall(request).execute()
+                response.isSuccessful
+            } catch (e: Exception) {
+                e.printStackTrace()
+                false
+            }
+        }
+    }
+
     suspend fun requestTimeOff(payload: String): Boolean {
         return withContext(Dispatchers.IO) {
             try {

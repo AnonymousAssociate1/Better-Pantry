@@ -68,6 +68,7 @@ class AuthManager(private val context: Context) {
         private const val PREF_LAST_NAME = "last_name"
         private const val PREF_PREFERRED_NAME = "preferred_name"
         private const val PREF_CODE_VERIFIER = "code_verifier"
+        private const val PREF_CAFE_NO = "cafe_no"
     }
 
     private var codeVerifier: String = ""
@@ -168,12 +169,14 @@ class AuthManager(private val context: Context) {
                 val firstName = json.optString("firstname")
                 val lastName = json.optString("lastname")
                 val preferredName = json.optString("knownas")
+                val cafeNo = json.optString("cafenumber")
 
                 prefs.edit().apply {
                     putString(PREF_USER_ID, userId)
                     putString(PREF_FIRST_NAME, firstName)
                     putString(PREF_LAST_NAME, lastName)
                     putString(PREF_PREFERRED_NAME, preferredName)
+                    putString(PREF_CAFE_NO, cafeNo)
                     apply()
                 }
             }
@@ -231,6 +234,7 @@ class AuthManager(private val context: Context) {
     }
     fun getLastName(): String? = prefs.getString(PREF_LAST_NAME, null)
     fun getPreferredName(): String? = prefs.getString(PREF_PREFERRED_NAME, null)
+    fun getCafeNo(): String? = prefs.getString(PREF_CAFE_NO, null)
 
     fun clearTokens() {
         prefs.edit().clear().apply()

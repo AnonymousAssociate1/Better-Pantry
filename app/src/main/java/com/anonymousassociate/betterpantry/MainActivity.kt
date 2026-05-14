@@ -36,7 +36,7 @@ import kotlin.math.max
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
-    private lateinit var authManager: AuthManager
+    lateinit var authManager: AuthManager
     private lateinit var apiService: PantryApiService
 
     lateinit var repository: PantryRepository

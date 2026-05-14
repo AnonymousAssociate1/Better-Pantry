@@ -27,8 +27,10 @@ class AvailabilityFragment : Fragment() {
     private var updateTimeRunnable: Runnable? = null
     
     private lateinit var swipeRefreshLayout: androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+    private lateinit var cancelPendingButton: android.widget.Button
     
     private val repository by lazy { (requireActivity() as com.anonymousassociate.betterpantry.MainActivity).repository }
+    private val authManager by lazy { (requireActivity() as com.anonymousassociate.betterpantry.MainActivity).authManager }
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -52,6 +54,7 @@ class AvailabilityFragment : Fragment() {
         val editButton = view.findViewById<ImageButton>(R.id.editAvailabilityButton)
         val addTimeOffButton = view.findViewById<ImageButton>(R.id.addTimeOffButton)
         swipeRefreshLayout = view.findViewById(R.id.swipeRefreshLayout)
+        cancelPendingButton = view.findViewById(R.id.cancelPendingButton)
 
         androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(swipeRefreshLayout) { v, insets ->
             val bars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
@@ -80,7 +83,7 @@ class AvailabilityFragment : Fragment() {
         }
         
         editButton.setOnClickListener {
-            (requireActivity() as? com.anonymousassociate.betterpantry.MainActivity)?.openBrowser("https://pantry.panerabread.com/gateway/home/#/self-service/availability")
+            EditAvailabilityDialog().show(parentFragmentManager, "edit_availability")
         }
         
         addTimeOffButton.setOnClickListener {
@@ -89,6 +92,10 @@ class AvailabilityFragment : Fragment() {
         
         parentFragmentManager.setFragmentResultListener("time_off_request_result", viewLifecycleOwner) { _, _ ->
             refreshDataFromCache()
+        }
+
+        parentFragmentManager.setFragmentResultListener("availability_edit_result", viewLifecycleOwner) { _, _ ->
+            loadAvailability(forceRefresh = true)
         }
         
         // Load cache immediately
@@ -351,30 +358,66 @@ class AvailabilityFragment : Fragment() {
         maxResponse: com.anonymousassociate.betterpantry.models.MaxHoursResponse?
     ) {
         // Max Hours
-        if (maxResponse?.approved != null) {
-            dailyMaxText.text = maxResponse.approved.maxHoursDaily?.toString() ?: "--"
-            weeklyMaxText.text = maxResponse.approved.maxHoursWeekly?.toString() ?: "--"
+        val approvedMaxDaily = maxResponse?.approved?.maxHoursDaily?.toString() ?: "--"
+        val approvedMaxWeekly = maxResponse?.approved?.maxHoursWeekly?.toString() ?: "--"
+        
+        dailyMaxText.text = approvedMaxDaily
+        dailyMaxText.textSize = 24f
+        weeklyMaxText.text = approvedMaxWeekly
+        weeklyMaxText.textSize = 24f
+        
+        val dailyPendingTv = view?.findViewById<TextView>(R.id.dailyPendingText)
+        val weeklyPendingTv = view?.findViewById<TextView>(R.id.weeklyPendingText)
+
+        if (maxResponse?.pending != null) {
+            val pendingMaxDaily = maxResponse.pending.maxHoursDaily?.toString() ?: "--"
+            val pendingMaxWeekly = maxResponse.pending.maxHoursWeekly?.toString() ?: "--"
+            
+            dailyPendingTv?.text = "PENDING: $pendingMaxDaily"
+            dailyPendingTv?.visibility = View.VISIBLE
+            
+            weeklyPendingTv?.text = "PENDING: $pendingMaxWeekly"
+            weeklyPendingTv?.visibility = View.VISIBLE
         } else {
-            dailyMaxText.text = "--"
-            weeklyMaxText.text = "--"
+            dailyPendingTv?.visibility = View.GONE
+            weeklyPendingTv?.visibility = View.GONE
         }
 
         // Availability
         availabilityListContainer.removeAllViews()
         val days = listOf("SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY")
         
-        if (avResponse?.approved?.availableTime != null) {
-            val map = avResponse.approved.availableTime
-            
-            days.forEach { dayKey ->
-                val slots = map[dayKey] ?: emptyList()
-                val dayView = createDayView(dayKey, slots)
-                availabilityListContainer.addView(dayView)
+        val approvedMap = avResponse?.approved?.availableTime ?: emptyMap()
+        val pendingMap = avResponse?.pending?.availableTime
+
+        val hasPendingAvailability = pendingMap != null
+        val hasPendingMaxHours = maxResponse?.pending != null
+
+        if (hasPendingAvailability || hasPendingMaxHours) {
+            cancelPendingButton.visibility = View.VISIBLE
+            cancelPendingButton.setOnClickListener {
+                com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
+                    .setTitle("Cancel Pending Changes")
+                    .setMessage("Are you sure you want to cancel your pending availability changes?")
+                    .setPositiveButton("Yes") { _, _ ->
+                        cancelPendingChanges(hasPendingAvailability, hasPendingMaxHours)
+                    }
+                    .setNegativeButton("No", null)
+                    .show()
             }
+        } else {
+            cancelPendingButton.visibility = View.GONE
+        }
+
+        days.forEach { dayKey ->
+            val approvedSlots = approvedMap[dayKey] ?: emptyList()
+            val pendingSlots = pendingMap?.get(dayKey)
+            val dayView = createDayView(dayKey, approvedSlots, pendingSlots)
+            availabilityListContainer.addView(dayView)
         }
     }
 
-    private fun createDayView(dayKey: String, slots: List<com.anonymousassociate.betterpantry.models.TimeSlot>): View {
+    private fun createDayView(dayKey: String, approvedSlots: List<com.anonymousassociate.betterpantry.models.TimeSlot>, pendingSlots: List<com.anonymousassociate.betterpantry.models.TimeSlot>?): View {
         val context = requireContext()
         val card = androidx.cardview.widget.CardView(context)
         val params = android.widget.LinearLayout.LayoutParams(
@@ -388,9 +431,6 @@ class AvailabilityFragment : Fragment() {
         card.setCardBackgroundColor(androidx.core.content.ContextCompat.getColor(context, R.color.card_background_color))
         
         val layout = android.widget.LinearLayout(context)
-        layout.orientation = android.widget.LinearLayout.VERTICAL // Changed to VERTICAL for times under day? No, design was Day LEFT, Times RIGHT?
-        // Layout was horizontal in my previous code: layout.orientation = android.widget.LinearLayout.HORIZONTAL
-        // I'll stick to horizontal but fix padding.
         layout.orientation = android.widget.LinearLayout.HORIZONTAL
         
         val pad = (16 * resources.displayMetrics.density).toInt()
@@ -415,32 +455,48 @@ class AvailabilityFragment : Fragment() {
         )
         timesLayout.gravity = android.view.Gravity.END
         
-        if (slots.isEmpty()) {
-            val tv = TextView(context)
-            tv.text = "Not Available"
-            tv.textSize = 16f
-            tv.setTextColor(androidx.core.content.ContextCompat.getColor(context, R.color.text_secondary))
-            tv.gravity = android.view.Gravity.END
-            tv.layoutParams = android.widget.LinearLayout.LayoutParams(
+        // Approved Text
+        val approvedText = if (approvedSlots.isEmpty()) {
+            "Not Available"
+        } else if (approvedSlots.any { it.allDay == true }) {
+            "All Day"
+        } else {
+            approvedSlots.joinToString("\n") { "${formatTime(it.start)} - ${formatTime(it.end)}" }
+        }
+        
+        val tv = TextView(context)
+        tv.text = approvedText
+        tv.textSize = 16f
+        tv.setTextColor(if (approvedSlots.isEmpty()) androidx.core.content.ContextCompat.getColor(context, R.color.text_secondary) else androidx.core.content.ContextCompat.getColor(context, R.color.text_primary))
+        tv.gravity = android.view.Gravity.END
+        tv.layoutParams = android.widget.LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+        timesLayout.addView(tv)
+        
+        // Pending Text
+        if (pendingSlots != null) {
+            val pendingText = if (pendingSlots.isEmpty()) {
+                "Not Available"
+            } else if (pendingSlots.any { it.allDay == true }) {
+                "All Day"
+            } else {
+                pendingSlots.joinToString("\n") { "${formatTime(it.start)} - ${formatTime(it.end)}" }
+            }
+            
+            val pendingTv = TextView(context)
+            pendingTv.text = "PENDING: $pendingText"
+            pendingTv.textSize = 14f
+            pendingTv.setTextColor(androidx.core.content.ContextCompat.getColor(context, R.color.text_secondary))
+            pendingTv.gravity = android.view.Gravity.END
+            pendingTv.layoutParams = android.widget.LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-            timesLayout.addView(tv)
-        } else {
-            slots.forEach { slot ->
-                val tv = TextView(context)
-                val start = formatTime(slot.start)
-                val end = formatTime(slot.end)
-                tv.text = "$start - $end"
-                tv.textSize = 16f
-                tv.setTextColor(androidx.core.content.ContextCompat.getColor(context, R.color.text_primary))
-                tv.gravity = android.view.Gravity.END
-                tv.layoutParams = android.widget.LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                )
-                timesLayout.addView(tv)
+            ).apply {
+                topMargin = (4 * resources.displayMetrics.density).toInt()
             }
+            timesLayout.addView(pendingTv)
         }
         
         layout.addView(dayText)
@@ -448,6 +504,46 @@ class AvailabilityFragment : Fragment() {
         card.addView(layout)
         
         return card
+    }
+    
+    private fun cancelPendingChanges(hasPendingAvailability: Boolean, hasPendingMaxHours: Boolean) {
+        cancelPendingButton.isEnabled = false
+        lifecycleScope.launchWhenStarted {
+            try {
+                val userId = authManager.getUserId() ?: return@launchWhenStarted
+                val cafeNoStr = authManager.getCafeNo() ?: "202924"
+                val cafeNo = cafeNoStr.toIntOrNull() ?: 202924
+
+                var allSuccess = true
+
+                if (hasPendingAvailability) {
+                    val payload = org.json.JSONObject().apply {
+                        put("request", org.json.JSONObject())
+                        put("employeeId", userId)
+                        put("cafeNo", cafeNo)
+                    }
+                    val success = repository.cancelAvailability(payload.toString())
+                    if (!success) allSuccess = false
+                }
+
+                if (hasPendingMaxHours) {
+                    val success = repository.cancelMaxHours(userId)
+                    if (!success) allSuccess = false
+                }
+
+                if (allSuccess) {
+                    android.widget.Toast.makeText(requireContext(), "Pending changes cancelled", android.widget.Toast.LENGTH_SHORT).show()
+                    loadAvailability(forceRefresh = true)
+                } else {
+                    android.widget.Toast.makeText(requireContext(), "Failed to cancel some pending changes", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                android.widget.Toast.makeText(requireContext(), "Error cancelling changes", android.widget.Toast.LENGTH_SHORT).show()
+            } finally {
+                cancelPendingButton.isEnabled = true
+            }
+        }
     }
     
     private fun formatTime(time: String?): String {

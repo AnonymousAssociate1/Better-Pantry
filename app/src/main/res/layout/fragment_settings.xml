@@ -85,6 +85,84 @@
             android:drawableTint="@color/text_secondary" />
     </com.google.android.material.card.MaterialCardView>
 
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="QUICK LINKS"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:letterSpacing="0.05"
+        android:textColor="@color/work_day_green"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="24dp" />
+
+    <com.google.android.material.card.MaterialCardView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp"
+        app:cardBackgroundColor="@color/card_background_color"
+        app:cardCornerRadius="8dp"
+        app:cardElevation="4dp">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/workdayLearningButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Workday Learning"
+            android:textAlignment="viewStart"
+            android:padding="16dp"
+            android:background="@android:color/transparent"
+            android:textColor="@color/text_primary"
+            style="@style/Widget.MaterialComponents.Button.TextButton.Icon"
+            android:drawableEnd="@drawable/ic_expand"
+            android:drawableTint="@color/text_secondary" />
+    </com.google.android.material.card.MaterialCardView>
+
+    <com.google.android.material.card.MaterialCardView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp"
+        app:cardBackgroundColor="@color/card_background_color"
+        app:cardCornerRadius="8dp"
+        app:cardElevation="4dp">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/iBohButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="iBOH"
+            android:textAlignment="viewStart"
+            android:padding="16dp"
+            android:background="@android:color/transparent"
+            android:textColor="@color/text_primary"
+            style="@style/Widget.MaterialComponents.Button.TextButton.Icon"
+            android:drawableEnd="@drawable/ic_expand"
+            android:drawableTint="@color/text_secondary" />
+    </com.google.android.material.card.MaterialCardView>
+
+    <com.google.android.material.card.MaterialCardView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="24dp"
+        app:cardBackgroundColor="@color/card_background_color"
+        app:cardCornerRadius="8dp"
+        app:cardElevation="4dp">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/corcButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="CORC"
+            android:textAlignment="viewStart"
+            android:padding="16dp"
+            android:background="@android:color/transparent"
+            android:textColor="@color/text_primary"
+            style="@style/Widget.MaterialComponents.Button.TextButton.Icon"
+            android:drawableEnd="@drawable/ic_expand"
+            android:drawableTint="@color/text_secondary" />
+    </com.google.android.material.card.MaterialCardView>
+
     <View
         android:layout_width="match_parent"
         android:layout_height="0dp"

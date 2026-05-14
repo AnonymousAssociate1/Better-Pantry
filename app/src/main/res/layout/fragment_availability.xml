@@ -77,6 +77,18 @@
 
             </RelativeLayout>
 
+            <!-- Cancel Pending Button -->
+            <Button
+                android:id="@+id/cancelPendingButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginBottom="16dp"
+                android:backgroundTint="@android:color/holo_red_dark"
+                android:text="CANCEL PENDING CHANGES"
+                android:textColor="@color/white"
+                android:visibility="gone" />
+
             <!-- Max Hours Card -->
             <!-- Add padding to sides since we removed NestedScrollView padding -->
             <LinearLayout
@@ -127,10 +139,19 @@
                                     android:id="@+id/dailyMaxText"
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
+                                    android:gravity="center"
                                     android:text="--"
                                     android:textSize="24sp"
                                     android:textStyle="bold"
                                     android:textColor="@color/text_primary" />
+                                <TextView
+                                    android:id="@+id/dailyPendingText"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:gravity="center"
+                                    android:textColor="@color/text_secondary"
+                                    android:textSize="14sp"
+                                    android:visibility="gone" />
                                 <TextView
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
@@ -149,10 +170,19 @@
                                     android:id="@+id/weeklyMaxText"
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
+                                    android:gravity="center"
                                     android:text="--"
                                     android:textSize="24sp"
                                     android:textStyle="bold"
                                     android:textColor="@color/text_primary" />
+                                <TextView
+                                    android:id="@+id/weeklyPendingText"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:gravity="center"
+                                    android:textColor="@color/text_secondary"
+                                    android:textSize="14sp"
+                                    android:visibility="gone" />
                                 <TextView
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"

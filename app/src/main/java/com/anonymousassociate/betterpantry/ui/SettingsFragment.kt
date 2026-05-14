@@ -45,6 +45,10 @@ class SettingsFragment : Fragment() {
         val notificationsButton: MaterialButton = view.findViewById(R.id.notificationsButton)
         val hideAvailabilitySwitch: SwitchMaterial = view.findViewById(R.id.hideAvailabilitySwitch)
         val logoutButton: MaterialButton = view.findViewById(R.id.logoutButton)
+        
+        val workdayLearningButton: MaterialButton = view.findViewById(R.id.workdayLearningButton)
+        val iBohButton: MaterialButton = view.findViewById(R.id.iBohButton)
+        val corcButton: MaterialButton = view.findViewById(R.id.corcButton)
 
         // Setup Toggle
         hideAvailabilitySwitch.isChecked = settingsPreferences.showAvailabilityOnCalendar
@@ -60,6 +64,19 @@ class SettingsFragment : Fragment() {
         // Setup Notifications
         notificationsButton.setOnClickListener {
             NotificationSettingsDialog(requireContext()).show()
+        }
+        
+        // Setup Quick Links
+        workdayLearningButton.setOnClickListener {
+            (requireActivity() as? com.anonymousassociate.betterpantry.MainActivity)?.openBrowser("https://wd5.myworkday.com/panerabread/learning")
+        }
+
+        iBohButton.setOnClickListener {
+            (requireActivity() as? com.anonymousassociate.betterpantry.MainActivity)?.openBrowser("https://panera.iboh.app")
+        }
+
+        corcButton.setOnClickListener {
+            (requireActivity() as? com.anonymousassociate.betterpantry.MainActivity)?.openBrowser("https://login.microsoftonline.com/login.srf?wa=wsignin1.0&whr=panerabread.com&wreply=https://panerabread.sharepoint.com/sites/Home/SitePages/CORCHome.aspx")
         }
 
         // Setup Logout
