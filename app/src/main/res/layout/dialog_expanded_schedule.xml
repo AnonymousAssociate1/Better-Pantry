@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
@@ -45,6 +46,24 @@
                 android:tint="@color/text_primary" />
         </LinearLayout>
     </RelativeLayout>
+
+    <!-- Cafe Switcher -->
+    <FrameLayout
+        android:id="@+id/expandedCafeSwitcherScroll"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingHorizontal="16dp"
+        android:paddingBottom="8dp"
+        android:visibility="gone">
+
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/expandedCafeChipGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:singleLine="false"
+            app:singleSelection="true"
+            app:selectionRequired="true" />
+    </FrameLayout>
 
     <!-- Scrollable container -->
     <ScrollView

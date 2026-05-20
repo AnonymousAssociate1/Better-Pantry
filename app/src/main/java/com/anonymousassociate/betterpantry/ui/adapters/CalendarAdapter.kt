@@ -24,7 +24,8 @@ class CalendarAdapter(
     private val approvedTimeOffDates = mutableSetOf<LocalDate>()
     private val pendingTimeOffDates = mutableSetOf<LocalDate>()
 
-    fun updateSchedule(schedule: ScheduleData, timeOffRequests: List<com.anonymousassociate.betterpantry.models.TimeOffRequest>? = null, showAvailability: Boolean = true) {
+    fun updateSchedule(schedule: ScheduleData, timeOffRequests: List<com.anonymousassociate.betterpantry.models.TimeOffRequest>? = null, showAvailability: Boolean = true, context: android.content.Context, cafeFilter: Set<String>? = null) {
+        val settingsPreferences = com.anonymousassociate.betterpantry.SettingsPreferences(context)
         scheduleData = schedule
         workDates.clear()
         availableShiftDates.clear()
@@ -33,12 +34,14 @@ class CalendarAdapter(
 
         // Parse work dates from currentShifts
         schedule.currentShifts?.forEach { shift ->
-            shift.startDateTime?.let { dateTimeStr ->
-                try {
-                    val date = LocalDate.parse(dateTimeStr.substring(0, 10))
-                    workDates.add(date)
-                } catch (e: Exception) {
-                    e.printStackTrace()
+            if (settingsPreferences.isCafeEnabled(shift.cafeNumber)) {
+                shift.startDateTime?.let { dateTimeStr ->
+                    try {
+                        val date = LocalDate.parse(dateTimeStr.substring(0, 10))
+                        workDates.add(date)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
                 }
             }
         }
@@ -47,12 +50,17 @@ class CalendarAdapter(
         if (showAvailability) {
             schedule.track?.forEach { track ->
                 if (track.type == "AVAILABLE" && track.primaryShiftRequest?.state == "AVAILABLE") {
-                    track.primaryShiftRequest?.shift?.startDateTime?.let { dateTimeStr ->
-                        try {
-                            val date = LocalDate.parse(dateTimeStr.substring(0, 10))
-                            availableShiftDates.add(date)
-                        } catch (e: Exception) {
-                            e.printStackTrace()
+                    val shift = track.primaryShiftRequest?.shift
+                    if (shift != null && settingsPreferences.isCafeEnabled(shift.cafeNumber)) {
+                        if (cafeFilter == null || cafeFilter.contains(shift.cafeNumber)) {
+                            shift.startDateTime?.let { dateTimeStr ->
+                                try {
+                                    val date = LocalDate.parse(dateTimeStr.substring(0, 10))
+                                    availableShiftDates.add(date)
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
+                            }
                         }
                     }
                 }

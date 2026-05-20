@@ -29,6 +29,7 @@ import java.util.regex.Pattern
 
 class NotificationAdapter(
     private var notifications: List<NotificationData>,
+    private val settingsPreferences: com.anonymousassociate.betterpantry.SettingsPreferences,
     private val onMarkAsReadClick: (String) -> Unit,
     private val onDeleteClick: (String) -> Unit,
     private val onUndeleteClick: (String) -> Unit,
@@ -37,6 +38,7 @@ class NotificationAdapter(
 ) : RecyclerView.Adapter<NotificationAdapter.NotificationViewHolder>() {
 
     private var scheduleData: com.anonymousassociate.betterpantry.models.ScheduleData? = null
+    private val imageCache = java.util.concurrent.ConcurrentHashMap<String, Drawable>()
 
     fun updateScheduleData(newSchedule: com.anonymousassociate.betterpantry.models.ScheduleData) {
         scheduleData = newSchedule
@@ -223,16 +225,14 @@ class NotificationAdapter(
                                 val date = LocalDateTime.parse(startStr).format(DateTimeFormatter.ofPattern("M/d", Locale.US))
                                 
                                 val pref = initiator?.optString("preferredName")?.ifEmpty { null }
-                                val first = if (pref != null) {
-                                    pref
-                                } else {
-                                    initiator?.optString("firstName") ?: ""
-                                }
-                                val last = initiator?.optString("lastName") ?: ""
-                                val name = "$first $last".trim().ifEmpty { "Someone" }
+                                val first = initiator?.optString("firstName")
+                                val last = initiator?.optString("lastName")
+                                val employeeId = initiator?.optString("employeeId") ?: initiator?.optString("associateId")
+                                val name = settingsPreferences.getCoworkerDisplayName(employeeId, first, last, pref).ifEmpty { "Someone" }
                                 
                                 displayMessage = "$name's $workstationName shift from $sTime - $eTime on $date is available for pickup"
                             }
+
                         } else if (eventType == "POST_APPROVED_EVENT") {
                             val initiatorShift = json.optJSONObject("initiatorShift")
                             val initiator = json.optJSONObject("initiatingAssociate")
@@ -269,16 +269,14 @@ class NotificationAdapter(
                                 val date = LocalDateTime.parse(startStr).format(DateTimeFormatter.ofPattern("M/d", Locale.US))
                                 
                                 val pref = initiator?.optString("preferredName")?.ifEmpty { null }
-                                val first = if (pref != null) {
-                                    pref
-                                } else {
-                                    initiator?.optString("firstName") ?: ""
-                                }
-                                val last = initiator?.optString("lastName") ?: ""
-                                val name = "$first $last".trim().ifEmpty { "Someone" }
+                                val first = initiator?.optString("firstName")
+                                val last = initiator?.optString("lastName")
+                                val employeeId = initiator?.optString("employeeId") ?: initiator?.optString("associateId")
+                                val name = settingsPreferences.getCoworkerDisplayName(employeeId, first, last, pref).ifEmpty { "Someone" }
                                 
                                 displayMessage = "Your shift request for $name's $workstationName shift from $sTime - $eTime on $date was approved"
                             }
+
                         }
                     }
                 }
@@ -512,6 +510,8 @@ class NotificationAdapter(
                 inner class Base64ImageGetter(private val textView: TextView) : Html.ImageGetter {
                     override fun getDrawable(source: String): Drawable? {
                         if (source.startsWith("data:image/")) {
+                            val cached = imageCache[source]
+                            if (cached != null) return cached
                             try {
                                 val base64Source = source.substringAfter(",")
                                 val decodedString = Base64.decode(base64Source, Base64.DEFAULT)
@@ -529,13 +529,14 @@ class NotificationAdapter(
                                     displayMetrics.widthPixels - (80 * displayMetrics.density).toInt()
                                 }
                                 
-                                var width = drawable.intrinsicWidth
-                                var height = drawable.intrinsicHeight
+                                val width = drawable.intrinsicWidth
+                                val height = drawable.intrinsicHeight
                                 
                                 val ratio = maxWidth.toFloat() / width
                                 val newHeight = (height * ratio).toInt()
                                 
                                 drawable.setBounds(0, 0, maxWidth, newHeight)
+                                imageCache[source] = drawable
                                 return drawable
                             } catch (e: Exception) {
                                 e.printStackTrace()

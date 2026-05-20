@@ -35,15 +35,22 @@ class PantryRepository(private val apiService: PantryApiService, private val sch
         endDateTime: String,
         forceRefresh: Boolean = false
     ): List<TeamMember>? {
-        if (!forceRefresh && !scheduleCache.isTeamScheduleStale()) {
+        if (!forceRefresh && !scheduleCache.isTeamScheduleStale(cafeNo)) {
             val cached = scheduleCache.getTeamSchedule()
             if (cached != null && cached.isNotEmpty()) {
                  return filterTeamMembers(cached)
             }
         }
         val data = apiService.getTeamMembers(cafeNo, companyCode, startDateTime, endDateTime)
-        if (data != null) {
-            scheduleCache.mergeTeamSchedule(data)
+        val populatedData = data?.map { member ->
+            val populatedShifts = member.shifts?.map { shift ->
+                shift.copy(cafeNumber = cafeNo)
+            }
+            member.copy(shifts = populatedShifts)
+        }
+        if (populatedData != null) {
+            scheduleCache.mergeTeamSchedule(populatedData)
+            scheduleCache.setTeamScheduleUpdateTime(cafeNo, System.currentTimeMillis())
         }
         // Fetch from cache to ensure merge result is returned (and filtered)
         // Or just filter 'data' if it was a fresh fetch? 
@@ -140,8 +147,40 @@ class PantryRepository(private val apiService: PantryApiService, private val sch
         return success
     }
 
+    suspend fun tradeShift(payload: String): Boolean {
+        val success = apiService.tradeShift(payload)
+        if (success) {
+            getSchedule(forceRefresh = true)
+        }
+        return success
+    }
+
+    suspend fun coverShift(payload: String): Boolean {
+        val success = apiService.coverShift(payload)
+        if (success) {
+            getSchedule(forceRefresh = true)
+        }
+        return success
+    }
+
     suspend fun cancelPostShift(payload: String): Int {
         val code = apiService.cancelPostShift(payload)
+        if (code in 200..299) {
+            getSchedule(forceRefresh = true)
+        }
+        return code
+    }
+
+    suspend fun cancelTradeShift(payload: String): Int {
+        val code = apiService.cancelTradeShift(payload)
+        if (code in 200..299) {
+            getSchedule(forceRefresh = true)
+        }
+        return code
+    }
+
+    suspend fun cancelCoverShift(payload: String): Int {
+        val code = apiService.cancelCoverShift(payload)
         if (code in 200..299) {
             getSchedule(forceRefresh = true)
         }

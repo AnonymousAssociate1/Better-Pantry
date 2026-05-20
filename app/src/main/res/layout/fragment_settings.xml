@@ -1,13 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:padding="16dp"
+    android:fillViewport="true"
     android:clipToPadding="false"
     android:clipChildren="false"
     android:background="?android:attr/windowBackground">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="16dp"
+        android:paddingBottom="16dp"
+        android:clipToPadding="false"
+        android:clipChildren="false">
 
     <TextView
         android:id="@+id/settingsTitle"
@@ -25,6 +35,8 @@
     <com.google.android.material.card.MaterialCardView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginStart="4dp"
+        android:layout_marginEnd="4dp"
         android:layout_marginBottom="8dp"
         app:cardBackgroundColor="@color/card_background_color"
         app:cardCornerRadius="8dp"
@@ -44,6 +56,73 @@
     <com.google.android.material.card.MaterialCardView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginStart="4dp"
+        android:layout_marginEnd="4dp"
+        android:layout_marginBottom="8dp"
+        app:cardBackgroundColor="@color/card_background_color"
+        app:cardCornerRadius="8dp"
+        app:cardElevation="4dp">
+
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/combineShiftsSwitch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:padding="16dp"
+            android:text="Combine Shifts in Detail View"
+            android:checked="true"
+            android:textSize="16sp"
+            android:textColor="@color/text_primary" />
+    </com.google.android.material.card.MaterialCardView>
+
+    <com.google.android.material.card.MaterialCardView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="4dp"
+        android:layout_marginEnd="4dp"
+        android:layout_marginBottom="8dp"
+        app:cardBackgroundColor="@color/card_background_color"
+        app:cardCornerRadius="8dp"
+        app:cardElevation="4dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="AUTHENTICATION"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:textColor="@color/work_day_green"
+                android:letterSpacing="0.05"
+                android:layout_marginBottom="8dp" />
+
+            <com.google.android.material.textfield.TextInputLayout
+                style="@style/Widget.App.TextInputLayout.ExposedDropdown"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <AutoCompleteTextView
+                    android:id="@+id/authFrequencyDropdown"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="none"
+                    android:textColor="@color/text_primary"
+                    android:textSize="16sp" />
+
+            </com.google.android.material.textfield.TextInputLayout>
+
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+
+    <com.google.android.material.card.MaterialCardView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="4dp"
+        android:layout_marginEnd="4dp"
         android:layout_marginBottom="8dp"
         app:cardBackgroundColor="@color/card_background_color"
         app:cardCornerRadius="8dp"
@@ -66,7 +145,9 @@
     <com.google.android.material.card.MaterialCardView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="24dp"
+        android:layout_marginStart="4dp"
+        android:layout_marginEnd="4dp"
+        android:layout_marginBottom="8dp"
         app:cardBackgroundColor="@color/card_background_color"
         app:cardCornerRadius="8dp"
         app:cardElevation="4dp">
@@ -76,6 +157,30 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Notification Settings"
+            android:textAlignment="viewStart"
+            android:padding="16dp"
+            android:background="@android:color/transparent"
+            android:textColor="@color/text_primary"
+            style="@style/Widget.MaterialComponents.Button.TextButton.Icon"
+            android:drawableEnd="@drawable/ic_expand"
+            android:drawableTint="@color/text_secondary" />
+    </com.google.android.material.card.MaterialCardView>
+
+    <com.google.android.material.card.MaterialCardView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="4dp"
+        android:layout_marginEnd="4dp"
+        android:layout_marginBottom="24dp"
+        app:cardBackgroundColor="@color/card_background_color"
+        app:cardCornerRadius="8dp"
+        app:cardElevation="4dp">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/cafeSettingsButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Cafe Settings"
             android:textAlignment="viewStart"
             android:padding="16dp"
             android:background="@android:color/transparent"
@@ -100,6 +205,8 @@
     <com.google.android.material.card.MaterialCardView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginStart="4dp"
+        android:layout_marginEnd="4dp"
         android:layout_marginBottom="8dp"
         app:cardBackgroundColor="@color/card_background_color"
         app:cardCornerRadius="8dp"
@@ -122,6 +229,8 @@
     <com.google.android.material.card.MaterialCardView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginStart="4dp"
+        android:layout_marginEnd="4dp"
         android:layout_marginBottom="8dp"
         app:cardBackgroundColor="@color/card_background_color"
         app:cardCornerRadius="8dp"
@@ -144,6 +253,8 @@
     <com.google.android.material.card.MaterialCardView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginStart="4dp"
+        android:layout_marginEnd="4dp"
         android:layout_marginBottom="24dp"
         app:cardBackgroundColor="@color/card_background_color"
         app:cardCornerRadius="8dp"
@@ -163,15 +274,12 @@
             android:drawableTint="@color/text_secondary" />
     </com.google.android.material.card.MaterialCardView>
 
-    <View
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1" />
-
     <com.google.android.material.button.MaterialButton
         android:id="@+id/logoutButton"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginStart="4dp"
+        android:layout_marginEnd="4dp"
         android:text="Log Out"
         android:textColor="@color/white"
         android:backgroundTint="@android:color/holo_red_dark"
@@ -179,4 +287,5 @@
         android:padding="12dp"
         android:layout_marginBottom="16dp"/>
 
-</LinearLayout>
+    </LinearLayout>
+</androidx.core.widget.NestedScrollView>

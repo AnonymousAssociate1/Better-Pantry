@@ -12,7 +12,10 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:background="@color/background_color"
-        android:padding="16dp">
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingTop="20dp"
+        android:paddingBottom="16dp">
 
         <TextView
             android:id="@+id/dateHeader"
@@ -29,7 +32,8 @@
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:layout_alignParentEnd="true"
-            android:layout_centerVertical="true">
+            android:layout_centerVertical="true"
+            android:gravity="center_vertical">
 
             <ImageButton
                 android:id="@+id/shareButton"
@@ -38,7 +42,7 @@
                 android:src="@drawable/ic_share"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="Share"
-                android:tint="@color/text_primary"
+                app:tint="@color/work_day_green"
                 android:padding="4dp"
                 android:layout_marginEnd="8dp"/>
 
@@ -49,7 +53,7 @@
                 android:src="@drawable/ic_expand"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="Expand View"
-                android:tint="@color/text_primary" />
+                app:tint="@color/work_day_green" />
 
             <ImageButton
                 android:id="@+id/closeButton"
@@ -58,63 +62,109 @@
                 android:src="@drawable/ic_close"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="Close"
-                android:tint="@color/text_primary"
+                app:tint="@color/text_primary"
                 android:visibility="gone"
                 android:layout_marginStart="8dp"/>
         </LinearLayout>
 
     </RelativeLayout>
 
-    <!-- Horizontal Scroll for Gantt Chart -->
-    <HorizontalScrollView
-        android:id="@+id/chartScrollView"
+    <LinearLayout
+        android:id="@+id/dialogTimeOffContainer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:scrollbars="none">
+        android:orientation="vertical"
+        android:paddingHorizontal="16dp"
+        android:paddingBottom="12dp"
+        android:visibility="gone">
 
-        <RelativeLayout
-            android:id="@+id/chartContainer"
+        <TextView
+            android:id="@+id/dialogTimeOffTitle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:background="@color/schedule_back_color"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp"
-            android:paddingTop="8dp">
-            
-        </RelativeLayout>
+            android:textSize="16sp"
+            android:textStyle="bold" />
 
-    </HorizontalScrollView>
+        <TextView
+            android:id="@+id/dialogTimeOffComment"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="14sp"
+            android:layout_marginTop="2dp"
+            android:visibility="gone" />
+    </LinearLayout>
 
-    <FrameLayout
-        android:id="@+id/noScheduleText"
+    <!-- Cafe Switcher -->
+    <HorizontalScrollView
+        android:id="@+id/dialogCafeSwitcherScroll"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="16dp"
-        android:layout_marginStart="16dp"
-        android:layout_marginEnd="16dp"
-        android:clipChildren="false"
-        android:clipToPadding="false"
-        android:paddingStart="4dp"
-        android:paddingEnd="4dp"
+        android:scrollbars="none"
+        android:paddingHorizontal="16dp"
         android:paddingBottom="8dp"
         android:visibility="gone">
 
-        <androidx.cardview.widget.CardView
-            android:layout_width="match_parent"
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/dialogCafeChipGroup"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            app:cardCornerRadius="8dp"
-            app:cardElevation="4dp"
-            app:cardBackgroundColor="@color/card_background_color">
+            app:singleLine="true"
+            app:singleSelection="true"
+            app:selectionRequired="true" />
+    </HorizontalScrollView>
 
-            <TextView
+    <com.anonymousassociate.betterpantry.ui.views.TwoDimensionalScrollView
+        android:id="@+id/chartScrollView"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <FrameLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content">
+
+            <RelativeLayout
+                android:id="@+id/chartContainer"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@color/schedule_back_color"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:paddingTop="8dp" />
+
+            <FrameLayout
+                android:id="@+id/noScheduleText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:gravity="center"
-                android:padding="32dp"
-                android:text="No schedule available"
-                android:textColor="@color/text_secondary" />
+                android:layout_marginBottom="16dp"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:clipChildren="false"
+                android:clipToPadding="false"
+                android:paddingStart="4dp"
+                android:paddingEnd="4dp"
+                android:paddingBottom="8dp"
+                android:visibility="gone">
 
-        </androidx.cardview.widget.CardView>
-    </FrameLayout>
+                <androidx.cardview.widget.CardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:cardCornerRadius="8dp"
+                    app:cardElevation="4dp"
+                    app:cardBackgroundColor="@color/card_background_color">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center"
+                        android:padding="32dp"
+                        android:text="No schedule available"
+                        android:textColor="@color/text_secondary" />
+
+                </androidx.cardview.widget.CardView>
+            </FrameLayout>
+
+        </FrameLayout>
+
+    </com.anonymousassociate.betterpantry.ui.views.TwoDimensionalScrollView>
 
 </LinearLayout>

@@ -38,7 +38,31 @@
                 app:tint="@color/text_primary" />
         </RelativeLayout>
 
-        <androidx.core.widget.NestedScrollView
+        <LinearLayout
+            android:id="@+id/dialogTimeOffContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginBottom="12dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/dialogTimeOffTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/dialogTimeOffComment"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="14sp"
+                android:layout_marginTop="2dp"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <com.anonymousassociate.betterpantry.ui.views.MaxHeightScrollView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:clipChildren="false"
@@ -54,7 +78,7 @@
                 android:clipChildren="false"
                 android:clipToPadding="false" />
 
-        </androidx.core.widget.NestedScrollView>
+        </com.anonymousassociate.betterpantry.ui.views.MaxHeightScrollView>
 
     <LinearLayout
         android:id="@+id/buttonContainer"

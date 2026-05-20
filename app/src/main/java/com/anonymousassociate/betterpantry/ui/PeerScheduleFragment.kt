@@ -38,6 +38,9 @@ class PeerScheduleFragment : Fragment() {
     private val repository by lazy { (requireActivity() as com.anonymousassociate.betterpantry.MainActivity).repository }
     private val scheduleCache by lazy { (requireActivity() as com.anonymousassociate.betterpantry.MainActivity).repository.let { ScheduleCache(requireContext()) } }
     private lateinit var calendarAdapter: CalendarAdapter
+    private lateinit var settingsPreferences: com.anonymousassociate.betterpantry.SettingsPreferences
+    private var selectedCafeFilter: String? = null
+    private var lastUniqueCafeNos: List<String>? = null
     private lateinit var calendarRecyclerView: RecyclerView
     private lateinit var shiftsRecyclerView: RecyclerView
     private lateinit var availableShiftsRecyclerView: RecyclerView
@@ -52,6 +55,7 @@ class PeerScheduleFragment : Fragment() {
 
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
     private var updateTimeRunnable: Runnable? = null
+    private var peerCafes: Set<String> = emptySet()
 
     companion object {
         private const val ARG_PEER_JSON = "peer_json"
@@ -89,6 +93,7 @@ class PeerScheduleFragment : Fragment() {
 
     private fun initViews(view: View) {
         authManager = AuthManager(requireContext())
+        settingsPreferences = com.anonymousassociate.betterpantry.SettingsPreferences(requireContext())
         // apiService and scheduleCache from repository logic
 
         calendarRecyclerView = view.findViewById(R.id.calendarRecyclerView)
@@ -113,10 +118,10 @@ class PeerScheduleFragment : Fragment() {
 
         availableShiftsRecyclerView.addItemDecoration(DateDividerItemDecoration(requireContext()))
         
-        val firstName = if (!peer?.preferredName.isNullOrEmpty()) peer?.preferredName else peer?.firstName
-        val name = "$firstName ${peer?.lastName}"
+        val name = settingsPreferences.getCoworkerDisplayName(peer?.employeeId, peer?.firstName, peer?.lastName, peer?.preferredName)
         nameText.text = name.uppercase()
     }
+
 
     private fun setupListeners() {
         view?.findViewById<View>(R.id.closeButton)?.setOnClickListener { parentFragmentManager.popBackStack() }
@@ -150,11 +155,29 @@ class PeerScheduleFragment : Fragment() {
             val cachedTeam = scheduleCache.getTeamSchedule()
             if (cachedTeam != null) {
                 val myId = authManager.getUserId()
-                val peerShifts = cachedTeam.find { it.associate?.employeeId == peer?.employeeId }?.shifts?.map { it.toShift(peer?.employeeId) } ?: emptyList()
-                val myShifts = cachedTeam.find { it.associate?.employeeId == myId }?.shifts?.map { it.toShift(myId) } ?: emptyList()
+                val allPeerShifts = cachedTeam.find { it.associate?.employeeId == peer?.employeeId }?.shifts?.map { it.toShift(peer?.employeeId) } ?: emptyList()
                 
+                val newPeerCafes = mutableSetOf<String>()
+                peer?.cafeNumber?.let { if (settingsPreferences.isCafeEnabled(it)) newPeerCafes.add(it) }
+                peer?.loanedCafeList?.forEach { if (settingsPreferences.isCafeEnabled(it)) newPeerCafes.add(it) }
+                allPeerShifts.mapNotNull { it.cafeNumber }.forEach { if (settingsPreferences.isCafeEnabled(it)) newPeerCafes.add(it) }
+                this.peerCafes = newPeerCafes
+
+                // Get unique cafe numbers for switcher
+                val uniqueCafeNos = allPeerShifts.mapNotNull { it.cafeNumber }
+                    .distinct()
+                    .filter { settingsPreferences.isCafeEnabled(it) }
+                setupCafeSwitcher(uniqueCafeNos, cachedSchedule)
+
+                // Filter peer shifts based on selected filter and enabled cafes
+                val peerShifts = allPeerShifts.filter { shift ->
+                    val isEnabled = settingsPreferences.isCafeEnabled(shift.cafeNumber)
+                    val matchesFilter = selectedCafeFilter == null || shift.cafeNumber == selectedCafeFilter
+                    isEnabled && matchesFilter
+                }
+
                 val today = LocalDate.now()
-                val allPersonalShifts = (peerShifts + myShifts)
+                val allPersonalShifts = peerShifts
                     .distinctBy { it.shiftId }
                     .filter {
                         try {
@@ -179,6 +202,60 @@ class PeerScheduleFragment : Fragment() {
                 })
                 updateTimestamp()
             }
+        }
+    }
+
+    private fun setupCafeSwitcher(uniqueCafeNos: List<String>, schedule: ScheduleData?) {
+        val switcherScroll = view?.findViewById<View>(R.id.cafeSwitcherScroll) ?: return
+        val chipGroup = view?.findViewById<com.google.android.material.chip.ChipGroup>(R.id.cafeChipGroup) ?: return
+
+        val sortedCafeNos = uniqueCafeNos.sorted()
+        if (sortedCafeNos.size <= 1) {
+            switcherScroll.visibility = View.GONE
+            selectedCafeFilter = null
+            lastUniqueCafeNos = null
+            chipGroup.removeAllViews()
+            return
+        }
+
+        switcherScroll.visibility = View.VISIBLE
+
+        if (lastUniqueCafeNos == sortedCafeNos) {
+            return
+        }
+        lastUniqueCafeNos = sortedCafeNos
+
+        chipGroup.removeAllViews()
+
+        // Create "All Cafes" Chip
+        val allChip = com.google.android.material.chip.Chip(requireContext()).apply {
+            text = "All Cafes"
+            isCheckable = true
+            isChecked = selectedCafeFilter == null
+            setOnCheckedChangeListener { _, isChecked ->
+                if (isChecked) {
+                    selectedCafeFilter = null
+                    refreshDataFromCache()
+                }
+            }
+        }
+        chipGroup.addView(allChip)
+
+        // Create chip for each cafe
+        sortedCafeNos.forEach { cafeNo ->
+            val displayName = settingsPreferences.getCafeDisplayName(cafeNo, schedule?.cafeList)
+            val chip = com.google.android.material.chip.Chip(requireContext()).apply {
+                text = displayName
+                isCheckable = true
+                isChecked = selectedCafeFilter == cafeNo
+                setOnCheckedChangeListener { _, isChecked ->
+                    if (isChecked) {
+                        selectedCafeFilter = cafeNo
+                        refreshDataFromCache()
+                    }
+                }
+            }
+            chipGroup.addView(chip)
         }
     }
 
@@ -261,7 +338,12 @@ class PeerScheduleFragment : Fragment() {
     }
 
     private fun displaySchedule(schedule: ScheduleData, shiftsForList: List<Shift>) {
-        calendarAdapter.updateSchedule(schedule)
+        val effectiveFilter = if (selectedCafeFilter != null) {
+            setOf(selectedCafeFilter!!)
+        } else {
+            peerCafes
+        }
+        calendarAdapter.updateSchedule(schedule, context = requireContext(), cafeFilter = effectiveFilter)
         val distinctShifts = shiftsForList.sortedBy { it.startDateTime }
         shiftsRecyclerView.adapter = ShiftAdapter(distinctShifts, { showShiftDetailDialog(listOf(it), emptyList()) })
         shiftsRecyclerView.layoutManager = LinearLayoutManager(context)
@@ -275,6 +357,11 @@ class PeerScheduleFragment : Fragment() {
             isTypeAvailable && isStateOpen && !isClaimed
         }?.sortedByDescending { it.primaryShiftRequest?.requestedAt }
          ?.mapNotNull { it.primaryShiftRequest?.shift }
+         ?.filter { shift ->
+             val isEnabled = settingsPreferences.isCafeEnabled(shift.cafeNumber)
+             val matchesFilter = selectedCafeFilter == null || shift.cafeNumber == selectedCafeFilter
+             isEnabled && matchesFilter && peerCafes.contains(shift.cafeNumber)
+         }
          ?.distinctBy { it.shiftId }
          ?.sortedBy { it.startDateTime } ?: emptyList()
         val availableShiftsTitle = view?.findViewById<View>(R.id.availableShiftsTitle)
@@ -326,7 +413,11 @@ class PeerScheduleFragment : Fragment() {
             isTypeAvailable && isStateOpen && !isClaimed
         }?.sortedByDescending { it.primaryShiftRequest?.requestedAt }
          ?.mapNotNull { it.primaryShiftRequest?.shift }
-         ?.filter { it.startDateTime?.startsWith(date.toString()) == true }
+         ?.filter { shift ->
+             val isEnabled = settingsPreferences.isCafeEnabled(shift.cafeNumber)
+             val matchesFilter = selectedCafeFilter == null || shift.cafeNumber == selectedCafeFilter
+             shift.startDateTime?.startsWith(date.toString()) == true && isEnabled && matchesFilter && peerCafes.contains(shift.cafeNumber)
+         }
          ?.distinctBy { it.shiftId }
          ?.sortedBy { it.startDateTime } ?: emptyList()
 
@@ -365,17 +456,21 @@ class PeerScheduleFragment : Fragment() {
             dialogTitle.text = customTitle
         } else if (firstItem != null) {
              if (firstItem.employeeId == "AVAILABLE_SHIFT" || availableShifts.contains(firstItem)) dialogTitle.text = "Available Shift"
-             else if (firstItem.employeeId == peerId) {
-                 val first = if (!peer?.preferredName.isNullOrEmpty()) peer?.preferredName else peer?.firstName
-                 dialogTitle.text = "$first ${peer?.lastName}"
-             }
+              else if (firstItem.employeeId == peerId) {
+                  dialogTitle.text = settingsPreferences.getCoworkerDisplayName(peer?.employeeId, peer?.firstName, peer?.lastName, peer?.preferredName)
+              }
              else if (firstItem.employeeId == myId) dialogTitle.text = "My Shift"
              else dialogTitle.text = getEmployeeName(firstItem.employeeId)
         } else {
              dialogTitle.text = "Shift Details"
         }
 
-        personalShifts.sortedBy { it.startDateTime }.forEach { addShiftCard(container, it, false, it.employeeId == myId, isNested) }
+        val displayedShifts = if (settingsPreferences.combineShifts) {
+            com.anonymousassociate.betterpantry.utils.ShiftCombiner.combineShifts(personalShifts)
+        } else {
+            personalShifts.sortedBy { it.startDateTime }
+        }
+        displayedShifts.forEach { addShiftCard(container, it, false, it.employeeId == myId, isNested) }
         if (personalShifts.isNotEmpty() && availableShifts.isNotEmpty()) {
              container.addView(TextView(requireContext()).apply{
                  text = "AVAILABLE SHIFTS"
@@ -407,10 +502,14 @@ class PeerScheduleFragment : Fragment() {
             shiftDateTime.text = "${LocalDateTime.parse(shift.startDateTime).format(DateTimeFormatter.ofPattern("E M/d h:mma"))} - ${LocalDateTime.parse(shift.endDateTime).format(DateTimeFormatter.ofPattern("h:mma"))}"
         } catch (e: Exception) { shiftDateTime.text = "Unknown time" }
 
-        shiftPosition.text = getWorkstationDisplayName(shift.workstationId, shift.workstationName, shift.workstationCode)
-        val cafeInfo = peerScheduleData?.cafeList?.firstOrNull { it.departmentName?.contains(shift.cafeNumber ?: "") == true } ?: peerScheduleData?.cafeList?.firstOrNull()
-        val addressStr = cafeInfo?.address?.let { "${it.addressLine ?: ""}, ${it.city ?: ""}, ${it.state ?: ""}" }?.trim(',',' ') ?: ""
-        shiftLocation.text = if (addressStr.isNotEmpty()) "#${shift.cafeNumber} - $addressStr" else "#${shift.cafeNumber}"
+        val station = if (shift.combinedShifts != null) {
+            shift.workstationName ?: "Shift"
+        } else {
+            getWorkstationDisplayName(shift.workstationId, shift.workstationName, shift.workstationCode)
+        }
+        shiftPosition.text = station
+        val location = settingsPreferences.getCafeDisplayName(shift.cafeNumber, peerScheduleData?.cafeList)
+        shiftLocation.text = location
 
         if (isAvailable) {
             val trackItem = peerScheduleData?.track?.filter { 
@@ -500,24 +599,21 @@ class PeerScheduleFragment : Fragment() {
         val myId = authManager.getUserId()
         val allShiftsForDay = teamMembers.flatMap { member ->
             member.shifts?.mapNotNull { s ->
-                if (s.startDateTime?.startsWith(date.toString()) == true) {
+                if (s.startDateTime?.startsWith(date.toString()) == true && 
+                    settingsPreferences.isCafeEnabled(s.cafeNumber) && 
+                    (selectedCafeFilter == null || s.cafeNumber == selectedCafeFilter)) {
                     val isFocal = focusShift != null && s.shiftId == focusShift.shiftId?.toLongOrNull()
                     val isMe = member.associate?.employeeId == myId
                     
-                    val cafeInfo = peerScheduleData?.cafeList?.firstOrNull { 
-                        it.departmentName?.contains(s.cafeNumber ?: "") == true 
-                    } ?: peerScheduleData?.cafeList?.firstOrNull()
-                    
-                    val location = cafeInfo?.let { cafe ->
-                        val address = cafe.address
-                        "#${s.cafeNumber ?: ""} - ${address?.addressLine ?: ""}, ${address?.city ?: ""}, ${address?.state ?: ""}"
-                    } ?: "#${s.cafeNumber ?: ""}"
+                    val location = settingsPreferences.getCafeDisplayName(s.cafeNumber, peerScheduleData?.cafeList)
 
-                    val firstName = if (!member.associate?.preferredName.isNullOrEmpty()) member.associate?.preferredName ?: "Unknown" else member.associate?.firstName ?: "Unknown"
+                    val firstName = settingsPreferences.getCoworkerFirstResolved(member.associate?.employeeId, member.associate?.firstName, member.associate?.preferredName)
+                    val lastName = settingsPreferences.getCoworkerLastResolved(member.associate?.employeeId, member.associate?.lastName)
 
                     EnrichedShift(
-                        shift = s.copy(employeeId = member.associate?.employeeId), firstName = firstName, lastName = member.associate?.lastName,
+                        shift = s.copy(employeeId = member.associate?.employeeId), firstName = firstName, lastName = lastName,
                         isMe = isMe || isFocal, isAvailable = member.associate?.employeeId == "AVAILABLE_SHIFT",
+
                         location = location,
                         managerNotes = s.managerNotes,
                         requesterName = s.requesterName,
@@ -537,7 +633,7 @@ class PeerScheduleFragment : Fragment() {
         view.findViewById<TextView>(R.id.dateHeader).text = date.format(DateTimeFormatter.ofPattern("EEEE, MMM d"))
         view.findViewById<View>(R.id.closeButton).setOnClickListener { dialog.dismiss() }
         val chartContainer = view.findViewById<RelativeLayout>(R.id.chartContainer)
-        val scrollView = view.findViewById<android.widget.HorizontalScrollView>(R.id.chartScrollView)
+        val scrollView = view.findViewById<com.anonymousassociate.betterpantry.ui.views.TwoDimensionalScrollView>(R.id.chartScrollView)
 
         val expandButton = view.findViewById<View>(R.id.expandButton)
         val shareButton = view.findViewById<View>(R.id.shareButton)
@@ -550,35 +646,131 @@ class PeerScheduleFragment : Fragment() {
         val focusTime = focusShift?.let { LocalDateTime.parse(it.startDateTime) } ?: if (date == LocalDate.now()) LocalDateTime.now() else null
         val focusEndTime = focusShift?.let { LocalDateTime.parse(it.endDateTime) }
 
-        expandButton.setOnClickListener { ExpandedScheduleFragment.newInstance(DaySchedule(date, allShiftsForDay), focusTime).show(parentFragmentManager, "ExpandedSchedule") }
+        val allEnabledShiftsForDay = teamMembers.flatMap { member ->
+            member.shifts?.mapNotNull { s ->
+                if (s.startDateTime?.startsWith(date.toString()) == true && 
+                    settingsPreferences.isCafeEnabled(s.cafeNumber)) {
+                    val isFocal = focusShift != null && s.shiftId == focusShift.shiftId?.toLongOrNull()
+                    val isMe = member.associate?.employeeId == myId
+                    
+                    val location = settingsPreferences.getCafeDisplayName(s.cafeNumber, peerScheduleData?.cafeList)
 
-        if (allShiftsForDay.isEmpty()) {
-            view.findViewById<View>(R.id.noScheduleText).visibility = View.VISIBLE
-            scrollView.visibility = View.GONE
-            expandButton.visibility = View.GONE
-            shareButton.visibility = View.GONE
-        } else {
-            scrollView.post {
-                val result = ChartRenderer.drawChart(requireContext(), chartContainer, DaySchedule(date, allShiftsForDay), isExpanded = false, focusTime = focusTime, focusEndTime = focusEndTime, listener = object : ScheduleInteractionListener {
-                    override fun onExpandClick(day: DaySchedule) { expandButton.performClick() }
-                    override fun onShiftClick(clickedShift: EnrichedShift) {
-                        val title = if (clickedShift.isAvailable) {
-                            "Available Shift"
-                        } else {
-                            "${clickedShift.firstName} ${clickedShift.lastName ?: ""}".trim()
-                        }
-                        showShiftDetailDialog(listOf(clickedShift.shift.toShift(clickedShift.shift.employeeId)), emptyList(), isNested = true, customTitle = title)
-                    }
-                })
+                    val firstName = settingsPreferences.getCoworkerFirstResolved(member.associate?.employeeId, member.associate?.firstName, member.associate?.preferredName)
+                    val lastName = settingsPreferences.getCoworkerLastResolved(member.associate?.employeeId, member.associate?.lastName)
+
+                    EnrichedShift(
+                        shift = s.copy(employeeId = member.associate?.employeeId), firstName = firstName, lastName = lastName,
+                        isMe = isMe || isFocal, isAvailable = member.associate?.employeeId == "AVAILABLE_SHIFT",
+
+                        location = location,
+                        managerNotes = s.managerNotes,
+                        requesterName = s.requesterName,
+                        requestedAt = s.requestedAt,
+                        requestId = s.requestId,
+                        myPickupRequestId = s.myPickupRequestId,
+                        pickupRequests = s.pickupRequests
+                    )
+                } else null
+            } ?: emptyList()
+        }.sortedBy { it.shift.startDateTime }
+
+        val dialogCafeSwitcherScroll = view.findViewById<View>(R.id.dialogCafeSwitcherScroll)
+        val dialogCafeChipGroup = view.findViewById<com.google.android.material.chip.ChipGroup>(R.id.dialogCafeChipGroup)
+        var currentSelectedCafe: String? = null
+
+        val homeCafe = authManager.getCafeNo()
+        val userId = authManager.getUserId()
+        val enabledCafeNumbers = settingsPreferences.getEnabledCafeNumbers(
+            peerScheduleData,
+            scheduleCache.getTeamSchedule(),
+            homeCafe,
+            userId
+        )
+
+        fun renderForCafe(selectedCafeNo: String?) {
+            val filteredShifts = allEnabledShiftsForDay.filter { it.shift.cafeNumber == selectedCafeNo }
+            
+            expandButton.setOnClickListener {
+                ExpandedScheduleFragment.newInstance(
+                    DaySchedule(date, filteredShifts),
+                    focusTime,
+                    focusShiftId = focusShift?.shiftId?.toString(),
+                    initialCafeNo = selectedCafeNo ?: filteredShifts.firstOrNull()?.shift?.cafeNumber
+                ).show(parentFragmentManager, "ExpandedSchedule")
+            }
+
+            if (filteredShifts.isEmpty()) {
+                view.findViewById<View>(R.id.noScheduleText).visibility = View.VISIBLE
+                scrollView.visibility = View.GONE
+                expandButton.visibility = View.GONE
+                shareButton.visibility = View.GONE
+            } else {
+                view.findViewById<View>(R.id.noScheduleText).visibility = View.GONE
+                scrollView.visibility = View.VISIBLE
+                expandButton.visibility = View.VISIBLE
+                shareButton.visibility = View.VISIBLE
                 
+                chartContainer.removeAllViews()
                 scrollView.post {
-                    val focusX = result.second
-                    if (focusX != null) {
-                        scrollView.scrollTo(focusX - scrollView.width / 2, 0)
+                    val result = ChartRenderer.drawChart(requireContext(), chartContainer, DaySchedule(date, filteredShifts), isExpanded = false, focusTime = focusTime, focusEndTime = focusEndTime, listener = object : ScheduleInteractionListener {
+                        override fun onExpandClick(day: DaySchedule) { expandButton.performClick() }
+                        override fun onShiftClick(clickedShift: EnrichedShift) {
+                            val title = if (clickedShift.isAvailable) {
+                                "Available Shift"
+                            } else {
+                                "${clickedShift.firstName} ${clickedShift.lastName ?: ""}".trim()
+                            }
+                            showShiftDetailDialog(listOf(clickedShift.shift.toShift(clickedShift.shift.employeeId)), emptyList(), isNested = true, customTitle = title)
+                        }
+                    })
+                    
+                    scrollView.post {
+                        val focusX = result.second
+                        if (focusX != null) {
+                            scrollView.scrollTo(focusX - scrollView.width / 2, 0)
+                        }
                     }
                 }
             }
         }
+
+        val sortedCafeNos = enabledCafeNumbers.sorted()
+        if (sortedCafeNos.size > 1 && dialogCafeSwitcherScroll != null && dialogCafeChipGroup != null) {
+            dialogCafeSwitcherScroll.visibility = View.VISIBLE
+            dialogCafeChipGroup.removeAllViews()
+
+            val focusCafe = focusShift?.cafeNumber 
+                ?: allEnabledShiftsForDay.firstOrNull { it.isMe }?.shift?.cafeNumber
+                ?: homeCafe
+
+            val initialIndex = sortedCafeNos.indexOf(focusCafe).let { if (it != -1) it else 0 }
+            val initialCafeNo = sortedCafeNos.getOrNull(initialIndex)
+            currentSelectedCafe = initialCafeNo
+
+            sortedCafeNos.forEach { cafeNo ->
+                val displayName = settingsPreferences.getCafeDisplayName(cafeNo, peerScheduleData?.cafeList)
+                val chip = com.google.android.material.chip.Chip(requireContext()).apply {
+                    text = displayName
+                    isCheckable = true
+                    isChecked = (cafeNo == initialCafeNo)
+                    setOnCheckedChangeListener { _, isChecked ->
+                        if (isChecked && currentSelectedCafe != cafeNo) {
+                            currentSelectedCafe = cafeNo
+                            renderForCafe(cafeNo)
+                        }
+                    }
+                }
+                dialogCafeChipGroup.addView(chip)
+            }
+
+            renderForCafe(initialCafeNo)
+        } else {
+            if (dialogCafeSwitcherScroll != null) {
+                dialogCafeSwitcherScroll.visibility = View.GONE
+            }
+            renderForCafe(sortedCafeNos.firstOrNull() ?: homeCafe)
+        }
+
         dialog.show()
     }
 
@@ -593,11 +785,15 @@ class PeerScheduleFragment : Fragment() {
                 // Include everyone including focal (Peer) and Me (User)
                 tm.shifts?.forEach { s ->
                     try {
-                        if (s.startDateTime?.startsWith(targetStart.toLocalDate().toString()) == true && LocalDateTime.parse(s.startDateTime).isBefore(targetEnd) && LocalDateTime.parse(s.endDateTime).isAfter(targetStart)) {
+                        if (s.startDateTime?.startsWith(targetStart.toLocalDate().toString()) == true && 
+                            LocalDateTime.parse(s.startDateTime).isBefore(targetEnd) && 
+                            LocalDateTime.parse(s.endDateTime).isAfter(targetStart) &&
+                            (s.cafeNumber == null || s.cafeNumber == targetShift.cafeNumber)) {
                             val isFocal = memberId == focalId
                             val isMe = memberId == myId
-                            val firstName = if (!tm.associate?.preferredName.isNullOrEmpty()) tm.associate?.preferredName ?: "Unknown" else tm.associate?.firstName ?: "Unknown"
-                            coworkerShifts.add(EnrichedShift(shift = s.copy(employeeId = memberId), firstName = firstName, lastName = tm.associate?.lastName, isMe = isMe || isFocal, isAvailable = memberId == "AVAILABLE_SHIFT"))
+                             val firstName = settingsPreferences.getCoworkerFirstResolved(tm.associate?.employeeId, tm.associate?.firstName, tm.associate?.preferredName)
+                             val lastName = settingsPreferences.getCoworkerLastResolved(tm.associate?.employeeId, tm.associate?.lastName)
+                             coworkerShifts.add(EnrichedShift(shift = s.copy(employeeId = memberId), firstName = firstName, lastName = lastName, isMe = isMe || isFocal, isAvailable = memberId == "AVAILABLE_SHIFT"))
                         }
                     } catch (e: Exception) {}
                 }
@@ -735,18 +931,13 @@ class PeerScheduleFragment : Fragment() {
         val teamMembers = scheduleCache.getTeamSchedule()
         val associate = teamMembers?.find { it.associate?.employeeId == employeeId }?.associate
         if (associate != null) {
-            val first = if (!associate.preferredName.isNullOrEmpty()) {
-                associate.preferredName
-            } else {
-                associate.firstName
-            }
-            return "$first ${associate.lastName ?: ""}".trim().ifEmpty { "Unknown" }
+            return settingsPreferences.getCoworkerDisplayName(employeeId, associate.firstName, associate.lastName, associate.preferredName)
         }
 
         // 2. Try peerScheduleData (EmployeeInfo)
         val info = peerScheduleData?.employeeInfo?.find { it.employeeId == employeeId }
         if (info != null) {
-            return "${info.firstName} ${info.lastName}".trim()
+            return settingsPreferences.getCoworkerDisplayName(employeeId, info.firstName, info.lastName, null)
         }
         
         return "Unknown"

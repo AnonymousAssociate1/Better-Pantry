@@ -2,12 +2,17 @@
     <string name="app_name">Better Pantry</string>
     <string name="release_notes">
 **Features**\n
-**•** Allowed editing Availability and Max Hours natively\n
-**•** Shows Pending Availability and Pending Max Hours \n
-**•** Quick Links in Settings page by popular request\n
+**•** Support for Multiple Cafes\n
+**•** Time Off in day preview \n
+**•** Nicknames for co-workers and cafes\n
+**•** Toggle cafes and notifications for cafes.\n
+**•** Option to *Post*, *Trade*, and *Cover* shifts rather than just posting them.\n
+**•** Authentication Options\n
+**•** Combine Shifts in Detail View (togglable)\n
 \n
 **Fixes**\n
-**•** Made some consistency updates\n
+**•** Schedule Page\n
+**•** Swapping between pages swaps then loads data\n
     </string>
 <!--    **Features**\n-->
 <!--    **•** Added option to show pay for shifts on home page\n-->

@@ -70,10 +70,8 @@ class ShiftDetailAdapter(
                 detailWorkstationText.text = workstation
 
                 // Show location
-                val location = cafeInfo?.let { cafe ->
-                    val address = cafe.address
-                    "#${shift.cafeNumber ?: ""} - ${address?.addressLine ?: ""}, ${address?.city ?: ""}, ${address?.state ?: ""}"
-                } ?: ""
+                val prefs = com.anonymousassociate.betterpantry.SettingsPreferences(itemView.context)
+                val location = prefs.getCafeDisplayName(shift.cafeNumber, if (cafeInfo != null) listOf(cafeInfo) else null)
                 detailLocationText.text = location
 
             } catch (e: Exception) {

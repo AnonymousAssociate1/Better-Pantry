@@ -11,6 +11,7 @@ import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
 import com.anonymousassociate.betterpantry.R
+import com.anonymousassociate.betterpantry.ui.views.TwoDimensionalScrollView
 import com.anonymousassociate.betterpantry.models.TeamShift
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -68,7 +69,7 @@ class DayScheduleAdapter(
         private val expandButton: ImageButton = itemView.findViewById(R.id.expandButton)
         private val shareButton: ImageButton = itemView.findViewById(R.id.shareButton)
         private val chartContainer: RelativeLayout = itemView.findViewById(R.id.chartContainer)
-        val scrollView: HorizontalScrollView = itemView.findViewById(R.id.chartScrollView) // Made public for Adapter access
+        val scrollView: TwoDimensionalScrollView = itemView.findViewById(R.id.chartScrollView) // Made public for Adapter access
 
         fun bind(day: DaySchedule) {
             dateHeader.text = day.date.format(DateTimeFormatter.ofPattern("EEEE, MMM d"))

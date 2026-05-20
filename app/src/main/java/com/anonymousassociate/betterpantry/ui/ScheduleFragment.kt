@@ -11,6 +11,8 @@ import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.RelativeLayout
 import android.widget.TextView
+import android.widget.AutoCompleteTextView
+import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
@@ -27,6 +29,9 @@ import com.anonymousassociate.betterpantry.models.TeamShift
 import com.anonymousassociate.betterpantry.models.TeamMember
 import com.anonymousassociate.betterpantry.models.ScheduleData
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -38,9 +43,10 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
     private val repository by lazy { (requireActivity() as com.anonymousassociate.betterpantry.MainActivity).repository }
     private val scheduleCache by lazy { (requireActivity() as com.anonymousassociate.betterpantry.MainActivity).repository.let { ScheduleCache(requireContext()) } }
     private lateinit var recyclerView: RecyclerView
-    private lateinit var loadingText: TextView
+    private lateinit var loadingContainer: View
     private lateinit var updatedText: TextView
     private lateinit var swipeRefreshLayout: androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+    private lateinit var settingsPreferences: com.anonymousassociate.betterpantry.SettingsPreferences
 
     private var scheduleData: ScheduleData? = null
 
@@ -64,10 +70,11 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
         super.onViewCreated(view, savedInstanceState)
 
         authManager = AuthManager(requireContext())
+        settingsPreferences = com.anonymousassociate.betterpantry.SettingsPreferences(requireContext())
         // apiService and scheduleCache from repository logic
 
         recyclerView = view.findViewById(R.id.scheduleRecyclerView)
-        loadingText = view.findViewById(R.id.loadingText)
+        loadingContainer = view.findViewById(R.id.loadingContainer)
         updatedText = view.findViewById(R.id.updatedText)
         swipeRefreshLayout = view.findViewById(R.id.swipeRefreshLayout)
 
@@ -137,7 +144,7 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
         }
 
         if (scheduleData == null) {
-            loadingText.visibility = View.VISIBLE
+            loadingContainer.visibility = View.VISIBLE
         }
 
         // Trigger animation immediately for auto-refresh
@@ -170,11 +177,11 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
                 }
 
                 if (scheduleData == null && isAdded) {
-                    loadingText.text = "Failed to load schedule."
+                    Toast.makeText(context, "Failed to load schedule.", Toast.LENGTH_SHORT).show()
                 } else if (isAdded) {
                     // We hide loading text only after team members attempt (inside fetchTeamMembers or here if it failed)
                     if (scheduleCache.getTeamSchedule() != null) {
-                        loadingText.visibility = View.GONE
+                        loadingContainer.visibility = View.GONE
                     }
                 }
             } catch (e: Exception) {
@@ -187,6 +194,61 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
         }
     }
 
+    private var selectedCafe: String? = null
+
+    private fun setupCafeFilterSwitcher(schedule: ScheduleData) {
+        val switcherScroll = view?.findViewById<View>(R.id.cafeSwitcherScroll) ?: return
+        val chipGroup = view?.findViewById<com.google.android.material.chip.ChipGroup>(R.id.cafeChipGroup) ?: return
+
+        val homeCafe = authManager.getCafeNo()
+        val userId = authManager.getUserId()
+        val enabledCafeNumbers = settingsPreferences.getEnabledCafeNumbers(
+            schedule,
+            scheduleCache.getTeamSchedule(),
+            homeCafe,
+            userId
+        )
+
+        val sortedCafeNos = enabledCafeNumbers.sorted()
+        if (sortedCafeNos.size <= 1) {
+            switcherScroll.visibility = View.GONE
+            selectedCafe = sortedCafeNos.firstOrNull() ?: homeCafe
+            chipGroup.removeAllViews()
+            return
+        }
+
+        switcherScroll.visibility = View.VISIBLE
+
+        chipGroup.removeAllViews()
+
+        // Create chip for each cafe
+        sortedCafeNos.forEach { cafeNo ->
+            val displayName = settingsPreferences.getCafeDisplayName(cafeNo, schedule.cafeList)
+            val chip = com.google.android.material.chip.Chip(requireContext()).apply {
+                text = displayName
+                isCheckable = true
+                
+                val shouldBeChecked = (selectedCafe == cafeNo) || (selectedCafe == null && cafeNo == (sortedCafeNos.firstOrNull { it == homeCafe } ?: sortedCafeNos.firstOrNull()))
+                isChecked = shouldBeChecked
+                
+                if (shouldBeChecked && selectedCafe != cafeNo) {
+                    selectedCafe = cafeNo
+                }
+                
+                setOnCheckedChangeListener { _, isChecked ->
+                    if (isChecked && selectedCafe != cafeNo) {
+                        selectedCafe = cafeNo
+                        val currentMembers = scheduleCache.getTeamSchedule()
+                        if (currentMembers != null) {
+                            displayScheduleFromData(schedule, currentMembers)
+                        }
+                    }
+                }
+            }
+            chipGroup.addView(chip)
+        }
+    }
+
     private suspend fun fetchTeamMembers(mySchedule: com.anonymousassociate.betterpantry.models.ScheduleData, forceRefresh: Boolean) {
         val sampleShift = mySchedule.currentShifts?.firstOrNull {
             it.cafeNumber != null && it.companyCode != null
@@ -194,24 +256,37 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
 
         if (sampleShift == null) return
 
-        val cafeNo = sampleShift.cafeNumber!!
         val companyCode = sampleShift.companyCode!!
+        val enabledCafeNos = settingsPreferences.getEnabledCafeNumbers(
+            mySchedule,
+            scheduleCache.getTeamSchedule(),
+            authManager.getCafeNo(),
+            authManager.getUserId()
+        )
+        val finalCafes = if (enabledCafeNos.isEmpty()) listOf(sampleShift.cafeNumber!!) else enabledCafeNos
 
         val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss")
         val startStr = LocalDateTime.now().withHour(0).withMinute(0).withSecond(0).format(formatter)
         val endStr = LocalDateTime.now().plusDays(30).withHour(23).withMinute(59).withSecond(59).format(formatter)
 
-        val teamMembers = try {
-            repository.getTeamMembers(cafeNo, companyCode, startStr, endStr, forceRefresh)
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
+        val forceThisBatch = forceRefresh || scheduleCache.isTeamScheduleStale()
+        val lastTeamMembers: List<TeamMember>? = coroutineScope {
+            finalCafes.map { cNo ->
+                async {
+                    try {
+                        repository.getTeamMembers(cNo, companyCode, startStr, endStr, forceThisBatch)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        null
+                    }
+                }
+            }.awaitAll().filterNotNull().lastOrNull()
         }
 
-        if (teamMembers != null) {
+        if (lastTeamMembers != null || scheduleCache.getTeamSchedule() != null) {
             if (isAdded) {
-                displayScheduleFromData(mySchedule, teamMembers)
-                loadingText.visibility = View.GONE
+                displayScheduleFromData(mySchedule, lastTeamMembers ?: scheduleCache.getTeamSchedule())
+                loadingContainer.visibility = View.GONE
             }
         }
     }
@@ -221,6 +296,16 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
         teamMembers: List<TeamMember>? = null
     ) {
         val members = teamMembers ?: scheduleCache.getTeamSchedule() ?: return
+
+        setupCafeFilterSwitcher(mySchedule)
+
+        // Clear adapter to avoid showing the old cafe schedule while loading
+        if (recyclerView.adapter is DayScheduleAdapter) {
+            (recyclerView.adapter as DayScheduleAdapter).updateData(emptyList())
+        }
+
+        // Show loading progress bar
+        loadingContainer.visibility = View.VISIBLE
 
         lifecycleScope.launch {
             val startDate = LocalDate.now()
@@ -237,6 +322,7 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
             } else {
                 recyclerView.adapter = DayScheduleAdapter(days, this@ScheduleFragment)
             }
+            loadingContainer.visibility = View.GONE
         }
     }
 
@@ -265,28 +351,21 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
                 member.shifts?.forEach { shift: TeamShift ->
                     try {
                         val shiftStart = LocalDateTime.parse(shift.startDateTime)
-                        if (shiftStart.toLocalDate() == currentDate) {
+                        val shiftCafeNo = shift.cafeNumber ?: selectedCafe ?: ""
+                        if (shiftStart.toLocalDate() == currentDate && shiftCafeNo == selectedCafe) {
 
                             // Find coworkers shifts for the mini-chart
                             val coworkerShifts = if (isAvailable || isMe) {
                                 findCoworkerShifts(shift, mergedMembers, myId)
                             } else null
 
-                            // Calculate location
-                            val cafeInfo = mySchedule.cafeList?.firstOrNull {
-                                it.departmentName?.contains(shift.cafeNumber ?: "") == true
-                            } ?: mySchedule.cafeList?.firstOrNull()
-
-                            val location = cafeInfo?.let { cafe ->
-                                val address = cafe.address
-                                "#${shift.cafeNumber ?: ""} - ${address?.addressLine ?: ""}, ${address?.city ?: ""}, ${address?.state ?: ""}"
-                            } ?: "#${shift.cafeNumber ?: ""}"
+                            val location = settingsPreferences.getCafeDisplayName(shift.cafeNumber, mySchedule.cafeList)
 
                             shiftsForDay.add(
                                 EnrichedShift(
                                     shift = shift,
-                                    firstName = if (!member.associate?.preferredName.isNullOrEmpty()) member.associate?.preferredName ?: "Unknown" else member.associate?.firstName ?: "Unknown",
-                                    lastName = member.associate?.lastName,
+                                    firstName = settingsPreferences.getCoworkerFirstResolved(member.associate?.employeeId, member.associate?.firstName, member.associate?.preferredName),
+                                    lastName = settingsPreferences.getCoworkerLastResolved(member.associate?.employeeId, member.associate?.lastName),
                                     isMe = isMe,
                                     isAvailable = isAvailable,
                                     managerNotes = shift.managerNotes,
@@ -352,7 +431,9 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
             .filter {
                 val state = it.primaryShiftRequest?.state
                 val isClaimed = it.relatedShiftRequests?.any { r -> r.state == "APPROVED" } == true
-                (state == "AVAILABLE" || state == "APPROVED") && !isClaimed
+                val s = it.primaryShiftRequest?.shift
+                val isCafeEnabled = s?.cafeNumber?.let { num -> settingsPreferences.isCafeEnabled(num) } ?: true
+                (state == "AVAILABLE" || state == "APPROVED") && !isClaimed && isCafeEnabled
             }
             .sortedByDescending { it.primaryShiftRequest?.requestedAt }
             .distinctBy { it.primaryShiftRequest?.shift?.shiftId } // Deduplicate
@@ -455,7 +536,10 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
     }
 
     private fun showExpandedView(day: DaySchedule) {
-        val fragment = ExpandedScheduleFragment.newInstance(day)
+        val fragment = ExpandedScheduleFragment.newInstance(
+            day,
+            initialCafeNo = day.shifts.firstOrNull()?.shift?.cafeNumber
+        )
         fragment.show(parentFragmentManager, "ExpandedSchedule")
     }
 
@@ -488,7 +572,29 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
         val pickupAttemptsText = cardView.findViewById<TextView>(R.id.pickupAttemptsText)
         val pickupRequestsContainer = cardView.findViewById<LinearLayout>(R.id.pickupRequestsContainer)
 
-        val s = enrichedShift.shift
+        var displayShift = enrichedShift
+        val originalS = enrichedShift.shift
+        if (settingsPreferences.combineShifts && !enrichedShift.isAvailable && originalS.employeeId != null) {
+            val cachedTeam = scheduleCache.getTeamSchedule()
+            val myId = authManager.getUserId()
+            val myShifts = scheduleData?.currentShifts ?: emptyList()
+            val tracks = scheduleData?.track ?: emptyList()
+            val employeeInfo = scheduleData?.employeeInfo ?: emptyList()
+            val mergedMembers = mergeData(cachedTeam ?: emptyList(), myShifts, tracks, employeeInfo)
+            
+            val personShifts = mergedMembers.find { it.associate?.employeeId == originalS.employeeId }?.shifts ?: emptyList()
+            val sameDayShifts = personShifts.filter { it.businessDate == originalS.businessDate }
+            if (sameDayShifts.size > 1) {
+                val combined = com.anonymousassociate.betterpantry.utils.ShiftCombiner.combineTeamShifts(sameDayShifts)
+                val matchingCombined = combined.find { cs ->
+                    cs.shiftId == originalS.shiftId || cs.combinedShifts?.any { it.shiftId == originalS.shiftId } == true
+                }
+                if (matchingCombined != null && matchingCombined.combinedShifts != null) {
+                    displayShift = enrichedShift.copy(shift = matchingCombined)
+                }
+            }
+        }
+        val s = displayShift.shift
         try {
             val start = LocalDateTime.parse(s.startDateTime)
             val end = LocalDateTime.parse(s.endDateTime)
@@ -499,11 +605,15 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
             shiftDateTime.text = s.startDateTime
         }
 
-        val station = getWorkstationDisplayName(s.workstationId ?: s.workstationCode, s.workstationName)
+        val station = if (s.combinedShifts != null) {
+            s.workstationName ?: "Shift"
+        } else {
+            getWorkstationDisplayName(s.workstationId ?: s.workstationCode, s.workstationName)
+        }
         shiftPosition.text = station
 
         // Location
-        shiftLocation.text = enrichedShift.location ?: "#${s.cafeNumber ?: ""}"
+        shiftLocation.text = settingsPreferences.getCafeDisplayName(s.cafeNumber, scheduleData?.cafeList)
 
         // Posted By / Status
         if (enrichedShift.isAvailable) {
@@ -603,16 +713,9 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
 
                     tm.shifts?.forEach { shift ->
                         try {
-                            if (shift.startDateTime?.startsWith(day.toString()) == true) {
+                            if (shift.startDateTime?.startsWith(day.toString()) == true && settingsPreferences.isCafeEnabled(shift.cafeNumber)) {
                                 // Re-enrich
-                                val cafeInfo = scheduleData?.cafeList?.firstOrNull {
-                                    it.departmentName?.contains(shift.cafeNumber ?: "") == true
-                                } ?: scheduleData?.cafeList?.firstOrNull()
-
-                                val location = cafeInfo?.let { cafe ->
-                                    val address = cafe.address
-                                    "#${shift.cafeNumber ?: ""} - ${address?.addressLine ?: ""}, ${address?.city ?: ""}, ${address?.state ?: ""}"
-                                } ?: "#${shift.cafeNumber ?: ""}"
+                                val location = settingsPreferences.getCafeDisplayName(shift.cafeNumber, scheduleData?.cafeList)
 
                                 val myRequest = tracks.find { t ->
                                     t.primaryShiftRequest?.shift?.shiftId == shift.shiftId.toString()
@@ -722,7 +825,7 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
         val shareButton = view.findViewById<android.widget.ImageButton>(R.id.shareButton)
         val closeButton = view.findViewById<android.widget.ImageButton>(R.id.closeButton)
         val chartContainer = view.findViewById<RelativeLayout>(R.id.chartContainer)
-        val scrollView = view.findViewById<android.widget.HorizontalScrollView>(R.id.chartScrollView)
+        val scrollView = view.findViewById<com.anonymousassociate.betterpantry.ui.views.TwoDimensionalScrollView>(R.id.chartScrollView)
 
         val noScheduleText = view.findViewById<View>(R.id.noScheduleText)
 
@@ -753,7 +856,18 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
             expandButton.visibility = View.VISIBLE
 
             expandButton.setOnClickListener {
-                val fragment = ExpandedScheduleFragment.newInstance(daySchedule)
+                val isToday = daySchedule.date == LocalDate.now()
+                val focusTime = if (isToday) {
+                    LocalDateTime.now()
+                } else {
+                    try { LocalDateTime.parse(focusShift?.startDateTime) } catch(e: Exception) { null }
+                }
+                val fragment = ExpandedScheduleFragment.newInstance(
+                    daySchedule,
+                    focusTime = focusTime,
+                    focusShiftId = focusShift?.shiftId?.toString(),
+                    initialCafeNo = focusShift?.cafeNumber ?: daySchedule.shifts.firstOrNull()?.shift?.cafeNumber
+                )
                 fragment.show(parentFragmentManager, "ExpandedSchedule")
             }
 
@@ -903,15 +1017,17 @@ class ScheduleFragment : Fragment(), ScheduleInteractionListener {
                 val isMe = tm.associate?.employeeId == myId
                 if (isMe) return@forEach
                 val isAvailable = tm.associate?.employeeId == "AVAILABLE_SHIFT"
-                val firstName = if (!tm.associate?.preferredName.isNullOrEmpty()) tm.associate?.preferredName ?: "Unknown" else tm.associate?.firstName ?: "Unknown"
-                val lastName = tm.associate?.lastName
+                val firstName = settingsPreferences.getCoworkerFirstResolved(tm.associate?.employeeId, tm.associate?.firstName, tm.associate?.preferredName)
+                val lastName = settingsPreferences.getCoworkerLastResolved(tm.associate?.employeeId, tm.associate?.lastName)
 
                 tm.shifts?.forEach { s: TeamShift ->
                     try {
                         val sStart = LocalDateTime.parse(s.startDateTime)
                         val sEnd = LocalDateTime.parse(s.endDateTime)
 
-                        if (sStart.isBefore(myEnd) && sEnd.isAfter(myStart)) {
+                        if (sStart.isBefore(myEnd) && sEnd.isAfter(myStart) && 
+                            settingsPreferences.isCafeEnabled(s.cafeNumber) && 
+                            (s.cafeNumber == null || s.cafeNumber == shift.cafeNumber)) {
                             coworkerShifts.add(
                                 EnrichedShift(
                                     shift = s,

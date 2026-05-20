@@ -178,6 +178,25 @@
 
                                     </androidx.constraintlayout.widget.ConstraintLayout>
 
+            <!-- Cafe Switcher -->
+            <HorizontalScrollView
+                android:id="@+id/cafeSwitcherScroll"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:scrollbars="none"
+                android:paddingHorizontal="16dp"
+                android:paddingBottom="8dp"
+                android:visibility="gone">
+
+                <com.google.android.material.chip.ChipGroup
+                    android:id="@+id/cafeChipGroup"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    app:singleLine="true"
+                    app:singleSelection="true"
+                    app:selectionRequired="true" />
+            </HorizontalScrollView>
+
             <!-- Calendar Headers -->
             <LinearLayout
                 android:id="@+id/dayHeadersLayout"

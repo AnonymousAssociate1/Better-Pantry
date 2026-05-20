@@ -108,51 +108,61 @@ class NotificationWorker(
 
                         val newNotifications = fetchedNotifications.filter { it.notificationId !in cachedIds }
                         val prefs = NotificationPreferences(context)
+                        val settingsPrefs = SettingsPreferences(context)
 
                         newNotifications.forEach { notification ->
                             if (notification.read != true) {
-                                // Filter logic
-                                var shouldSend = false
-                                val appDataStr = notification.appData
-                                val subject = notification.subject ?: ""
-                                
-                                if (!appDataStr.isNullOrEmpty()) {
-                                    try {
-                                        val value = JSONTokener(appDataStr).nextValue()
-                                        val json = if (value is JSONObject) value else if (value is String) JSONTokener(value).nextValue() as? JSONObject else null
-                                        
-                                        if (json != null) {
-                                            val eventType = json.optString("eventType")
-                                            when (eventType) {
-                                                "POST_APPROVED_EVENT" -> shouldSend = prefs.shiftApprovedEnabled
-                                                "CALLFORHELP_INITIATED_EVENT" -> shouldSend = prefs.managerCallsEnabled
-                                                "POST_INITIATED_EVENT" -> shouldSend = prefs.shiftPickupsEnabled
-                                                else -> {
-                                                    // Fallback for known subjects if eventType is missing/generic
-                                                    shouldSend = if (subject.contains("Schedule Published", ignoreCase = true)) {
-                                                        prefs.schedulePublishedEnabled
-                                                    } else {
-                                                        prefs.otherEnabled
-                                                    }
-                                                }
-                                            }
-                                        } else {
-                                            shouldSend = prefs.otherEnabled
-                                        }
-                                    } catch (e: Exception) {
-                                        shouldSend = prefs.otherEnabled
-                                    }
+                                val cafeNo = settingsPrefs.getCafeNumberFromNotification(notification)
+                                val isCafeAllowed = if (cafeNo != null) {
+                                    settingsPrefs.isCafeEnabled(cafeNo) && settingsPrefs.isCafeNotificationsEnabled(cafeNo)
                                 } else {
-                                    // No app data, check subject
-                                    shouldSend = if (subject.contains("Schedule Published", ignoreCase = true)) {
-                                        prefs.schedulePublishedEnabled
-                                    } else {
-                                        prefs.otherEnabled
-                                    }
+                                    true
                                 }
 
-                                if (shouldSend) {
-                                    sendNotification(context, notification, apiService)
+                                if (isCafeAllowed) {
+                                    // Filter logic
+                                    var shouldSend = false
+                                    val appDataStr = notification.appData
+                                    val subject = notification.subject ?: ""
+                                    
+                                    if (!appDataStr.isNullOrEmpty()) {
+                                        try {
+                                            val value = JSONTokener(appDataStr).nextValue()
+                                            val json = if (value is JSONObject) value else if (value is String) JSONTokener(value).nextValue() as? JSONObject else null
+                                            
+                                            if (json != null) {
+                                                val eventType = json.optString("eventType")
+                                                when (eventType) {
+                                                    "POST_APPROVED_EVENT" -> shouldSend = prefs.shiftApprovedEnabled
+                                                    "CALLFORHELP_INITIATED_EVENT" -> shouldSend = prefs.managerCallsEnabled
+                                                    "POST_INITIATED_EVENT" -> shouldSend = prefs.shiftPickupsEnabled
+                                                    else -> {
+                                                        // Fallback for known subjects if eventType is missing/generic
+                                                        shouldSend = if (subject.contains("Schedule Published", ignoreCase = true)) {
+                                                            prefs.schedulePublishedEnabled
+                                                        } else {
+                                                            prefs.otherEnabled
+                                                        }
+                                                    }
+                                                }
+                                            } else {
+                                                shouldSend = prefs.otherEnabled
+                                            }
+                                        } catch (e: Exception) {
+                                            shouldSend = prefs.otherEnabled
+                                        }
+                                    } else {
+                                        // No app data, check subject
+                                        shouldSend = if (subject.contains("Schedule Published", ignoreCase = true)) {
+                                            prefs.schedulePublishedEnabled
+                                        } else {
+                                            prefs.otherEnabled
+                                        }
+                                    }
+
+                                    if (shouldSend) {
+                                        sendNotification(context, notification, apiService)
+                                    }
                                 }
                             }
                         }

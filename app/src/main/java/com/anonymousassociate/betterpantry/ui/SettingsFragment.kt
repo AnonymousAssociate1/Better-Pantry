@@ -8,6 +8,8 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
+import android.widget.ArrayAdapter
+import android.widget.AutoCompleteTextView
 import androidx.fragment.app.Fragment
 import com.anonymousassociate.betterpantry.MoneyPreferences
 import com.anonymousassociate.betterpantry.R
@@ -44,6 +46,7 @@ class SettingsFragment : Fragment() {
         val myPayButton: MaterialButton = view.findViewById(R.id.myPayButton)
         val notificationsButton: MaterialButton = view.findViewById(R.id.notificationsButton)
         val hideAvailabilitySwitch: SwitchMaterial = view.findViewById(R.id.hideAvailabilitySwitch)
+        val combineShiftsSwitch: SwitchMaterial = view.findViewById(R.id.combineShiftsSwitch)
         val logoutButton: MaterialButton = view.findViewById(R.id.logoutButton)
         
         val workdayLearningButton: MaterialButton = view.findViewById(R.id.workdayLearningButton)
@@ -56,6 +59,39 @@ class SettingsFragment : Fragment() {
             settingsPreferences.showAvailabilityOnCalendar = isChecked
         }
 
+        combineShiftsSwitch.isChecked = settingsPreferences.combineShifts
+        combineShiftsSwitch.setOnCheckedChangeListener { _, isChecked ->
+            settingsPreferences.combineShifts = isChecked
+        }
+
+        // Setup Auth Frequency Dropdown
+        val authFrequencyDropdown: AutoCompleteTextView = view.findViewById(R.id.authFrequencyDropdown)
+        authFrequencyDropdown.setDropDownBackgroundDrawable(
+            androidx.core.content.ContextCompat.getDrawable(requireContext(), R.drawable.bg_dropdown_popup)
+        )
+        val authOptions = arrayOf("When Opened", "Every 15 Minutes", "Never")
+        val authAdapter = ArrayAdapter(requireContext(), R.layout.item_dropdown_menu, authOptions)
+        authFrequencyDropdown.setAdapter(authAdapter)
+
+        val currentAuthFreq = settingsPreferences.authFrequency
+        val initialAuthText = when (currentAuthFreq) {
+            "WHEN_OPENED" -> "When Opened"
+            "15_MINUTES" -> "Every 15 Minutes"
+            "NEVER" -> "Never"
+            else -> "Every 15 Minutes"
+        }
+        authFrequencyDropdown.setText(initialAuthText, false)
+
+        authFrequencyDropdown.setOnItemClickListener { _, _, position, _ ->
+            val selectedVal = when (position) {
+                0 -> "WHEN_OPENED"
+                1 -> "15_MINUTES"
+                2 -> "NEVER"
+                else -> "15_MINUTES"
+            }
+            settingsPreferences.authFrequency = selectedVal
+        }
+
         // Setup My Pay
         myPayButton.setOnClickListener {
             showMoneySettingsDialog()
@@ -64,6 +100,14 @@ class SettingsFragment : Fragment() {
         // Setup Notifications
         notificationsButton.setOnClickListener {
             NotificationSettingsDialog(requireContext()).show()
+        }
+
+        // Setup Cafe Settings
+        val cafeSettingsButton: MaterialButton = view.findViewById(R.id.cafeSettingsButton)
+        cafeSettingsButton.setOnClickListener {
+            CafeSettingsDialog(requireContext()) {
+                (requireActivity() as? com.anonymousassociate.betterpantry.MainActivity)?.refreshCurrentFragment()
+            }.show()
         }
         
         // Setup Quick Links

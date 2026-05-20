@@ -2,6 +2,7 @@ package com.anonymousassociate.betterpantry
 
 import android.Manifest
 import android.app.Dialog
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -30,6 +31,8 @@ import com.anonymousassociate.betterpantry.databinding.ActivityMainBinding
 import com.anonymousassociate.betterpantry.ui.HomeFragment
 import com.anonymousassociate.betterpantry.ui.NotificationsFragment
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import java.util.concurrent.TimeUnit
 import kotlin.math.max
 
@@ -47,6 +50,7 @@ class MainActivity : AppCompatActivity() {
     private var hasShownBiometricThisSession = false
     private var isOpeningBrowser = false
     private var wasInBackground = false
+    private var isColdLaunch = true
 
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
     private var fastLoopRunnable: Runnable? = null
@@ -160,17 +164,29 @@ class MainActivity : AppCompatActivity() {
         }
 
         if (authManager.isTokenValid()) {
-            if (!hasShownBiometricThisSession) {
-                showBiometricPrompt()
+            if (shouldPromptBiometric()) {
+                if (!hasShownBiometricThisSession) {
+                    showBiometricPrompt()
+                } else {
+                    proceedToApp()
+                }
             } else {
+                isAuthenticated = true
+                hasShownBiometricThisSession = true
                 proceedToApp()
             }
         } else {
             lifecycleScope.launch {
                 if (authManager.refreshToken()) {
-                    if (!hasShownBiometricThisSession) {
-                        showBiometricPrompt()
+                    if (shouldPromptBiometric()) {
+                        if (!hasShownBiometricThisSession) {
+                            showBiometricPrompt()
+                        } else {
+                            proceedToApp()
+                        }
                     } else {
+                        isAuthenticated = true
+                        hasShownBiometricThisSession = true
                         proceedToApp()
                     }
                 } else {
@@ -223,19 +239,19 @@ class MainActivity : AppCompatActivity() {
 
         if (isOpeningBrowser) {
             isOpeningBrowser = false
-            // Return to Home after browser closes
-            // Use fragment transaction to ensure back stack is correct if needed, but nav handling does it
-            // If user went to settings -> browser, they are still on current tab.
-            // If user wants "return to our app's home page" from browser:
-            // loadFragment(HomeFragment()) // REMOVED: This was causing the redirect.
-            
             if (wasInBackground) {
                 wasInBackground = false
             } else {
                 hasShownBiometricThisSession = false
-                if (isAuthenticated) {
-                    isAuthenticated = false
-                    showBiometricPrompt()
+                if (shouldPromptBiometric()) {
+                    if (isAuthenticated) {
+                        isAuthenticated = false
+                        showBiometricPrompt()
+                    }
+                } else {
+                    isAuthenticated = true
+                    hasShownBiometricThisSession = true
+                    proceedToApp()
                 }
             }
             return
@@ -243,9 +259,15 @@ class MainActivity : AppCompatActivity() {
 
         wasInBackground = false
 
-        if (isAuthenticated && !hasShownBiometricThisSession && !isAuthenticating) {
-            isAuthenticated = false
-            showBiometricPrompt()
+        if (shouldPromptBiometric()) {
+            if (isAuthenticated && !hasShownBiometricThisSession && !isAuthenticating) {
+                isAuthenticated = false
+                showBiometricPrompt()
+            }
+        } else {
+            isAuthenticated = true
+            hasShownBiometricThisSession = true
+            proceedToApp()
         }
         
         startPeriodicChecks()
@@ -266,6 +288,11 @@ class MainActivity : AppCompatActivity() {
         if (isOpeningBrowser) {
             return
         }
+        getSharedPreferences("settings_prefs", Context.MODE_PRIVATE)
+            .edit()
+            .putLong("last_closed_timestamp", System.currentTimeMillis())
+            .apply()
+
         hasShownBiometricThisSession = false
         stopPeriodicChecks()
     }
@@ -295,6 +322,28 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    private fun shouldPromptBiometric(): Boolean {
+        val settingsPrefs = SettingsPreferences(this)
+        val freq = settingsPrefs.authFrequency
+        if (freq == "NEVER") {
+            return false
+        }
+        if (isColdLaunch) {
+            return true
+        }
+        if (freq == "WHEN_OPENED") {
+            return true
+        }
+        // freq == "15_MINUTES"
+        val lastClosed = getSharedPreferences("settings_prefs", Context.MODE_PRIVATE)
+            .getLong("last_closed_timestamp", 0L)
+        if (lastClosed == 0L) {
+            return true
+        }
+        val elapsed = System.currentTimeMillis() - lastClosed
+        return elapsed >= 15 * 60 * 1000L
     }
 
     private fun showBiometricPrompt() {
@@ -445,6 +494,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun proceedToApp() {
+        isColdLaunch = false
         isAuthenticating = false
         lockDialog?.dismiss()
         lockDialog = null
@@ -607,7 +657,22 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    fun updateNotificationBadge(count: Int) {
+    fun updateNotificationBadge(rawCount: Int) {
+        val scheduleCache = ScheduleCache(this)
+        val notifications = scheduleCache.getCachedNotifications() ?: emptyList()
+        val prefs = SettingsPreferences(this)
+        
+        val count = if (notifications.isNotEmpty()) {
+            notifications.count { notification ->
+                notification.read == false && notification.deleted != true &&
+                (prefs.getCafeNumberFromNotification(notification)?.let { cafeNo ->
+                    prefs.isCafeEnabled(cafeNo) && prefs.isCafeNotificationsEnabled(cafeNo)
+                } ?: true)
+            }
+        } else {
+            rawCount
+        }
+
         val bottomNav = binding.bottomNavigation
         bottomNav.removeBadge(R.id.nav_home)
         val badge = bottomNav.getOrCreateBadge(R.id.nav_notifications)
@@ -629,11 +694,14 @@ class MainActivity : AppCompatActivity() {
 
     fun logout() {
         authManager.clearTokens()
-        // Clearing cache requires context, assume ScheduleCache handles it
-        // ScheduleCache(this).clear() // If accessible
+        getSharedPreferences("settings_prefs", Context.MODE_PRIVATE)
+            .edit()
+            .putLong("last_closed_timestamp", 0L)
+            .apply()
         isAuthenticated = false
         hasShownBiometricThisSession = false
         isAuthenticating = false
+        isColdLaunch = true
         val cookieManager = android.webkit.CookieManager.getInstance()
         cookieManager.removeAllCookies(null)
         cookieManager.flush()
@@ -704,9 +772,9 @@ class MainActivity : AppCompatActivity() {
                 if (isAuthenticated) {
                     lifecycleScope.launch {
                         try {
+                            repository.getNotifications() // Fetch latest for cache/updates first
                             val count = repository.getNotificationCount()
                             updateNotificationBadge(count)
-                            repository.getNotifications() // Fetch latest for cache/updates
                             repository.checkAndSendNewNotifications(this@MainActivity)
                         } catch (e: Exception) {
                             e.printStackTrace()
@@ -731,10 +799,9 @@ class MainActivity : AppCompatActivity() {
                             
                             val schedule = repository.getSchedule(forceRefresh = false)
                             
+                            repository.getNotifications(forceRefresh = false) // Fetch latest for cache/updates first
                             val count = repository.getNotificationCount()
                             updateNotificationBadge(count)
-                            
-                            repository.getNotifications(forceRefresh = false)
                             repository.checkAndSendNewNotifications(this@MainActivity)
                             
                             // Fetch Availability & Time Off (will only fetch if stale)
@@ -753,11 +820,34 @@ class MainActivity : AppCompatActivity() {
                             // But the repo/apiService needs them passed.
                             // We can try to extract from the just-fetched schedule?
                             schedule?.currentShifts?.firstOrNull()?.let { firstShift ->
-                                val cafe = firstShift.cafeNumber
                                 val company = firstShift.companyCode
-                                if (cafe != null && company != null) {
-                                    repository.getTeamMembers(cafe, company, start, end, forceRefresh = false)
+                                val settingsPrefs = SettingsPreferences(this@MainActivity)
+                                val enabledCafeNos = settingsPrefs.getEnabledCafeNumbers(
+                                    schedule,
+                                    ScheduleCache(this@MainActivity).getTeamSchedule(),
+                                    authManager.getCafeNo(),
+                                    authManager.getUserId()
+                                )
+
+                                val finalCafes = if (enabledCafeNos.isEmpty() && firstShift.cafeNumber != null) {
+                                    listOf(firstShift.cafeNumber)
+                                } else {
+                                    enabledCafeNos
                                 }
+
+                                 if (company != null) {
+                                     kotlinx.coroutines.coroutineScope {
+                                         finalCafes.map { cafe ->
+                                             async {
+                                                 try {
+                                                     repository.getTeamMembers(cafe, company, start, end, forceRefresh = false)
+                                                 } catch (e: Exception) {
+                                                     e.printStackTrace()
+                                                 }
+                                             }
+                                         }.awaitAll()
+                                     }
+                                 }
                             }
                             
                             // Notify fragments to update UI if they are visible
@@ -789,6 +879,25 @@ class MainActivity : AppCompatActivity() {
     private fun stopPeriodicChecks() {
         fastLoopRunnable?.let { handler.removeCallbacks(it) }
         slowLoopRunnable?.let { handler.removeCallbacks(it) }
+    }
+
+    fun refreshCurrentFragment() {
+        try {
+            val currentFragment = supportFragmentManager.findFragmentById(binding.fragmentContainer.id)
+            if (currentFragment is HomeFragment) {
+                currentFragment.refreshDataFromCache()
+            } else if (currentFragment is com.anonymousassociate.betterpantry.ui.ScheduleFragment) {
+                currentFragment.refreshDataFromCache()
+            } else if (currentFragment is com.anonymousassociate.betterpantry.ui.PeopleFragment) {
+                currentFragment.refreshDataFromCache()
+            } else if (currentFragment is NotificationsFragment) {
+                currentFragment.refreshDataFromCache()
+            } else if (currentFragment is com.anonymousassociate.betterpantry.ui.AvailabilityFragment) {
+                currentFragment.refreshDataFromCache()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     companion object {

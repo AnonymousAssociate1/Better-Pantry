@@ -22,12 +22,24 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_alignParentStart="true"
-            android:layout_toStartOf="@+id/starButton"
+            android:layout_toStartOf="@+id/editNicknameButton"
             android:layout_centerVertical="true"
             android:text="John Doe"
             android:textSize="16sp"
             android:textStyle="bold"
             android:textColor="@color/text_primary" />
+
+        <ImageButton
+            android:id="@+id/editNicknameButton"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_toStartOf="@+id/starButton"
+            android:layout_centerVertical="true"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_edit"
+            android:scaleType="centerInside"
+            android:contentDescription="Edit Nickname"
+            app:tint="@color/text_secondary" />
 
         <ImageButton
             android:id="@+id/starButton"

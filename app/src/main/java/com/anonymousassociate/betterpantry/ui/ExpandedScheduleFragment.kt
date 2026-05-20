@@ -15,6 +15,7 @@ import androidx.lifecycle.lifecycleScope
 import com.anonymousassociate.betterpantry.AuthManager
 import com.anonymousassociate.betterpantry.PantryApiService
 import com.anonymousassociate.betterpantry.R
+import com.anonymousassociate.betterpantry.SettingsPreferences
 import kotlinx.coroutines.launch
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -23,16 +24,24 @@ class ExpandedScheduleFragment : DialogFragment() {
 
     private lateinit var authManager: AuthManager
     private val repository by lazy { (requireActivity() as com.anonymousassociate.betterpantry.MainActivity).repository }
+    private val settingsPreferences by lazy { SettingsPreferences(requireContext()) }
 
     companion object {
         var tempDaySchedule: DaySchedule? = null
         var tempFocusTime: LocalDateTime? = null
         var tempFocusShiftId: String? = null
+        var tempInitialCafeNo: String? = null
 
-        fun newInstance(day: DaySchedule, focusTime: LocalDateTime? = null, focusShiftId: String? = null): ExpandedScheduleFragment {
+        fun newInstance(
+            day: DaySchedule,
+            focusTime: LocalDateTime? = null,
+            focusShiftId: String? = null,
+            initialCafeNo: String? = null
+        ): ExpandedScheduleFragment {
             tempDaySchedule = day
             tempFocusTime = focusTime
             tempFocusShiftId = focusShiftId
+            tempInitialCafeNo = initialCafeNo
             return ExpandedScheduleFragment()
         }
     }
@@ -70,32 +79,41 @@ class ExpandedScheduleFragment : DialogFragment() {
 
         header.text = day.date.format(DateTimeFormatter.ofPattern("EEEE, MMM d"))
         
-        if (day.shifts.isEmpty()) {
-            shareBtn.visibility = View.GONE
-        } else {
-            shareBtn.visibility = View.VISIBLE
-            shareBtn.setOnClickListener {
-                 val dateStr = day.date.format(DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy"))
-                 com.anonymousassociate.betterpantry.utils.ShareUtil.shareView(requireContext(), container, "Share Full Schedule", headerText = dateStr)
-            }
-        }
-        
-        closeBtn.setOnClickListener {
-            if (showsDialog) {
-                dismiss()
-            } else {
-                parentFragmentManager.popBackStack()
-            }
-        }
+        val switcherScroll = view.findViewById<android.view.View>(R.id.expandedCafeSwitcherScroll)
+        val chipGroup = view.findViewById<com.google.android.material.chip.ChipGroup>(R.id.expandedCafeChipGroup)
 
-        container.post {
-            val width = container.width
-            if (width > 0) {
-                // Pass a listener to handle clicks
+        val scheduleCache = com.anonymousassociate.betterpantry.ScheduleCache(requireContext())
+        val scheduleData = scheduleCache.getSchedule()
+        val homeCafe = authManager.getCafeNo()
+        val userId = authManager.getUserId()
+        val enabledCafeNumbers = settingsPreferences.getEnabledCafeNumbers(
+            scheduleData,
+            scheduleCache.getTeamSchedule(),
+            homeCafe,
+            userId
+        )
+
+        val unfilteredShifts = day.shifts
+
+        fun renderForCafe(selectedCafeNo: String?, width: Int) {
+            val filteredShifts = unfilteredShifts.filter { it.shift.cafeNumber == selectedCafeNo }
+            val filteredDaySchedule = DaySchedule(day.date, filteredShifts)
+
+            if (filteredShifts.isEmpty()) {
+                container.removeAllViews()
+                shareBtn.visibility = View.GONE
+            } else {
+                shareBtn.visibility = View.VISIBLE
+                shareBtn.setOnClickListener {
+                     val dateStr = filteredDaySchedule.date.format(DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy"))
+                     com.anonymousassociate.betterpantry.utils.ShareUtil.shareView(requireContext(), container, "Share Full Schedule", headerText = dateStr)
+                }
+
+                container.removeAllViews()
                 val result = ChartRenderer.drawChart(
                     requireContext(),
                     container,
-                    day,
+                    filteredDaySchedule,
                     isExpanded = true,
                     containerWidth = width,
                     focusTime = tempFocusTime,
@@ -121,6 +139,56 @@ class ExpandedScheduleFragment : DialogFragment() {
                         val targetY = (focusY - screenHeight / 2).coerceAtLeast(0)
                         verticalScroll.smoothScrollTo(0, targetY)
                     }
+                }
+            }
+        }
+
+        closeBtn.setOnClickListener {
+            if (showsDialog) {
+                dismiss()
+            } else {
+                parentFragmentManager.popBackStack()
+            }
+        }
+
+        container.post {
+            val width = container.width
+            if (width > 0) {
+                val sortedCafeNos = enabledCafeNumbers.sorted()
+                if (sortedCafeNos.size > 1 && switcherScroll != null && chipGroup != null) {
+                    switcherScroll.visibility = View.VISIBLE
+                    chipGroup.removeAllViews()
+
+                    val focusCafe = tempInitialCafeNo
+                        ?: tempFocusShiftId?.let { fid -> unfilteredShifts.firstOrNull { it.shift.shiftId?.toString() == fid }?.shift?.cafeNumber }
+                        ?: unfilteredShifts.firstOrNull { it.isMe }?.shift?.cafeNumber
+                        ?: homeCafe
+
+                    val initialIndex = sortedCafeNos.indexOf(focusCafe).let { if (it != -1) it else 0 }
+                    val initialCafeNo = sortedCafeNos.getOrNull(initialIndex)
+                    var currentSelectedCafe = initialCafeNo
+
+                    sortedCafeNos.forEach { cafeNo ->
+                        val displayName = settingsPreferences.getCafeDisplayName(cafeNo, scheduleData?.cafeList)
+                        val chip = com.google.android.material.chip.Chip(requireContext()).apply {
+                            text = displayName
+                            isCheckable = true
+                            isChecked = (cafeNo == initialCafeNo)
+                            setOnCheckedChangeListener { _, isChecked ->
+                                if (isChecked && currentSelectedCafe != cafeNo) {
+                                    currentSelectedCafe = cafeNo
+                                    renderForCafe(cafeNo, width)
+                                }
+                            }
+                        }
+                        chipGroup.addView(chip)
+                    }
+
+                    renderForCafe(initialCafeNo, width)
+                } else {
+                    switcherScroll?.visibility = View.GONE
+                    val defaultCafe = sortedCafeNos.firstOrNull() ?: homeCafe
+                    renderForCafe(defaultCafe, width)
                 }
             }
         }
@@ -151,7 +219,24 @@ class ExpandedScheduleFragment : DialogFragment() {
         val pickupAttemptsText = cardView.findViewById<TextView>(R.id.pickupAttemptsText)
         val pickupRequestsContainer = cardView.findViewById<LinearLayout>(R.id.pickupRequestsContainer)
 
-        val s = enrichedShift.shift
+        var displayShift = enrichedShift
+        val originalS = enrichedShift.shift
+        if (settingsPreferences.combineShifts && !enrichedShift.isAvailable && originalS.employeeId != null) {
+            val day = tempDaySchedule
+            if (day != null) {
+                val personShifts = day.shifts.filter { it.shift.employeeId == originalS.employeeId && !it.isAvailable }.map { it.shift }
+                if (personShifts.size > 1) {
+                    val combined = com.anonymousassociate.betterpantry.utils.ShiftCombiner.combineTeamShifts(personShifts)
+                    val matchingCombined = combined.find { cs ->
+                        cs.shiftId == originalS.shiftId || cs.combinedShifts?.any { it.shiftId == originalS.shiftId } == true
+                    }
+                    if (matchingCombined != null && matchingCombined.combinedShifts != null) {
+                        displayShift = enrichedShift.copy(shift = matchingCombined)
+                    }
+                }
+            }
+        }
+        val s = displayShift.shift
         try {
             val start = LocalDateTime.parse(s.startDateTime)
             val end = LocalDateTime.parse(s.endDateTime)
@@ -162,11 +247,16 @@ class ExpandedScheduleFragment : DialogFragment() {
             shiftDateTime.text = s.startDateTime
         }
 
-        val station = getWorkstationDisplayName(s.workstationId ?: s.workstationCode, s.workstationName)
+        val station = if (s.combinedShifts != null) {
+            s.workstationName ?: "Shift"
+        } else {
+            getWorkstationDisplayName(s.workstationId ?: s.workstationCode, s.workstationName)
+        }
         shiftPosition.text = station
 
-        // Location from EnrichedShift
-        shiftLocation.text = enrichedShift.location ?: "#${s.cafeNumber ?: ""}"
+        // Location
+        val scheduleData = com.anonymousassociate.betterpantry.ScheduleCache(requireContext()).getSchedule()
+        shiftLocation.text = settingsPreferences.getCafeDisplayName(s.cafeNumber, scheduleData?.cafeList)
 
         // Posted By / Status
         if (enrichedShift.isAvailable) {

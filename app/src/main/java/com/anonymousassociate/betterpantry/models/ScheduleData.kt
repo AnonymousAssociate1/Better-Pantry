@@ -20,7 +20,8 @@ data class Shift(
     val companyCode: String?,
     val employeeId: String?,
     val shiftId: String?,
-    val workstationCode: String?
+    val workstationCode: String?,
+    val combinedShifts: List<Shift>? = null
 )
 
 data class TrackItem(
@@ -33,16 +34,21 @@ data class PrimaryShiftRequest(
     @SerializedName("requestId") val requestId: String?,
     val shift: Shift?,
     val requesterId: String?,
+    val recipientId: String?,
     val requestedAt: String?,
     val managerNotes: String?,
-    val state: String?
+    val state: String?,
+    val type: String?
 )
 
 data class RelatedShiftRequest(
     @SerializedName("requestId") val requestId: String?,
     val requesterId: String?,
+    val recipientId: String?,
     val requestedAt: String?,
-    val state: String?
+    val state: String?,
+    val type: String?,
+    val shift: Shift?
 )
 
 data class CafeInfo(
@@ -93,7 +99,9 @@ data class Associate(
     val employeeId: String?,
     val firstName: String?,
     val lastName: String?,
-    val preferredName: String?
+    val preferredName: String?,
+    val cafeNumber: String? = null,
+    val loanedCafeList: List<String>? = null
 )
 
 data class TeamShift(
@@ -113,5 +121,6 @@ data class TeamShift(
     val requestedAt: String? = null,
     val requestId: String? = null,
     val myPickupRequestId: String? = null,
-    val pickupRequests: List<String>? = null
+    val pickupRequests: List<String>? = null,
+    val combinedShifts: List<TeamShift>? = null
 )

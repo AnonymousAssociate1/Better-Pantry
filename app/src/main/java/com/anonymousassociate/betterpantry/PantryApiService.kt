@@ -232,6 +232,56 @@ class PantryApiService(private val authManager: AuthManager) {
         }
     }
 
+    suspend fun tradeShift(payload: String): Boolean {
+        return withContext(Dispatchers.IO) {
+            try {
+                val token = authManager.getAccessToken() ?: return@withContext false
+                val url = "https://pantry.panerabread.com/apis/selfservice-ui-service/v1/shifts/trade"
+
+                val body = payload.toRequestBody("application/json".toMediaTypeOrNull())
+
+                val request = Request.Builder()
+                    .url(url)
+                    .header("Authorization", "Bearer $token")
+                    .header("Accept", "application/json, text/plain, */*")
+                    .header("User-Agent", "Pantry/2.0 Android")
+                    .post(body)
+                    .build()
+
+                val response = client.newCall(request).execute()
+                response.isSuccessful
+            } catch (e: Exception) {
+                e.printStackTrace()
+                false
+            }
+        }
+    }
+
+    suspend fun coverShift(payload: String): Boolean {
+        return withContext(Dispatchers.IO) {
+            try {
+                val token = authManager.getAccessToken() ?: return@withContext false
+                val url = "https://pantry.panerabread.com/apis/selfservice-ui-service/v1/shifts/cover"
+
+                val body = payload.toRequestBody("application/json".toMediaTypeOrNull())
+
+                val request = Request.Builder()
+                    .url(url)
+                    .header("Authorization", "Bearer $token")
+                    .header("Accept", "application/json, text/plain, */*")
+                    .header("User-Agent", "Pantry/2.0 Android")
+                    .post(body)
+                    .build()
+
+                val response = client.newCall(request).execute()
+                response.isSuccessful
+            } catch (e: Exception) {
+                e.printStackTrace()
+                false
+            }
+        }
+    }
+
     suspend fun cancelPostShift(payload: String): Int {
         return withContext(Dispatchers.IO) {
             try {
@@ -255,6 +305,70 @@ class PantryApiService(private val authManager: AuthManager) {
                 val responseBody = response.body?.string()
                 println("DEBUG: Cancel Response Code: ${response.code}")
                 println("DEBUG: Cancel Response Body: $responseBody")
+                
+                response.code
+            } catch (e: Exception) {
+                e.printStackTrace()
+                -1
+            }
+        }
+    }
+
+    suspend fun cancelTradeShift(payload: String): Int {
+        return withContext(Dispatchers.IO) {
+            try {
+                val token = authManager.getAccessToken() ?: return@withContext -1
+                val url = "https://pantry.panerabread.com/apis/selfservice-ui-service/v1/shifts/trade/cancel"
+
+                println("DEBUG: Canceling Trade. URL: $url")
+                println("DEBUG: Payload: $payload")
+
+                val body = payload.toRequestBody("application/json".toMediaTypeOrNull())
+
+                val request = Request.Builder()
+                    .url(url)
+                    .header("Authorization", "Bearer $token")
+                    .header("Accept", "application/json, text/plain, */*")
+                    .header("User-Agent", "Pantry/2.0 Android")
+                    .post(body)
+                    .build()
+
+                val response = client.newCall(request).execute()
+                val responseBody = response.body?.string()
+                println("DEBUG: Cancel Trade Response Code: ${response.code}")
+                println("DEBUG: Cancel Trade Response Body: $responseBody")
+                
+                response.code
+            } catch (e: Exception) {
+                e.printStackTrace()
+                -1
+            }
+        }
+    }
+
+    suspend fun cancelCoverShift(payload: String): Int {
+        return withContext(Dispatchers.IO) {
+            try {
+                val token = authManager.getAccessToken() ?: return@withContext -1
+                val url = "https://pantry.panerabread.com/apis/selfservice-ui-service/v1/shifts/cover/cancel"
+
+                println("DEBUG: Canceling Cover. URL: $url")
+                println("DEBUG: Payload: $payload")
+
+                val body = payload.toRequestBody("application/json".toMediaTypeOrNull())
+
+                val request = Request.Builder()
+                    .url(url)
+                    .header("Authorization", "Bearer $token")
+                    .header("Accept", "application/json, text/plain, */*")
+                    .header("User-Agent", "Pantry/2.0 Android")
+                    .post(body)
+                    .build()
+
+                val response = client.newCall(request).execute()
+                val responseBody = response.body?.string()
+                println("DEBUG: Cancel Cover Response Code: ${response.code}")
+                println("DEBUG: Cancel Cover Response Body: $responseBody")
                 
                 response.code
             } catch (e: Exception) {

@@ -54,6 +54,25 @@
 
             </androidx.constraintlayout.widget.ConstraintLayout>
 
+            <!-- Cafe Switcher -->
+            <HorizontalScrollView
+                android:id="@+id/cafeSwitcherScroll"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:scrollbars="none"
+                android:paddingHorizontal="16dp"
+                android:paddingBottom="8dp"
+                android:visibility="gone">
+
+                <com.google.android.material.chip.ChipGroup
+                    android:id="@+id/cafeChipGroup"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    app:singleLine="true"
+                    app:singleSelection="true"
+                    app:selectionRequired="true" />
+            </HorizontalScrollView>
+
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/scheduleRecyclerView"
                 android:layout_width="match_parent"
@@ -62,15 +81,22 @@
                 android:paddingBottom="16dp"
                 android:nestedScrollingEnabled="false"/>
 
-            <TextView
-                android:id="@+id/loadingText"
+            <LinearLayout
+                android:id="@+id/loadingContainer"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_gravity="center"
-                android:layout_marginTop="32dp"
-                android:text="Loading Schedule..."
-                android:textSize="18sp"
-                android:visibility="gone"/>
+                android:layout_marginTop="48dp"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:visibility="gone">
+
+                <ProgressBar
+                    android:id="@+id/loadingProgressBar"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:indeterminateTint="@color/work_day_green" />
+            </LinearLayout>
 
         </LinearLayout>
 
