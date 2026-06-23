@@ -8,7 +8,7 @@ import com.anonymousassociate.betterpantry.models.NotificationData
 import com.anonymousassociate.betterpantry.models.ScheduleData
 import com.anonymousassociate.betterpantry.models.TeamMember
 
-class ScheduleCache(context: Context) {
+class ScheduleCache(val context: Context) {
 
     companion object {
         @Volatile
@@ -148,26 +148,47 @@ class ScheduleCache(context: Context) {
     }
 
     @Synchronized
-    fun mergeTeamSchedule(newMembers: List<TeamMember>) {
+    fun mergeTeamSchedule(
+        newMembers: List<TeamMember>,
+        queryCafeNo: String? = null,
+        queryStart: String? = null,
+        queryEnd: String? = null
+    ) {
         val current = getTeamSchedule() ?: emptyList()
-        val currentMap = current.associateBy { it.associate?.employeeId }.toMutableMap()
+        val currentMap = current.filter { it.associate?.employeeId != null }
+            .associateBy { it.associate!!.employeeId!! }
+            .toMutableMap()
         
         // Build lookups for new members' shifts to avoid O(N * S * M * K) complexity
         val shiftIdToNewOwner = mutableMapOf<Long, String>()
         val shiftKeyToNewOwner = mutableMapOf<String, String>()
+        val newEmployeeShifts = mutableMapOf<String, MutableSet<String>>()
         
         newMembers.forEach { newMember ->
             val empId = newMember.associate?.employeeId ?: return@forEach
+            val shiftSet = newEmployeeShifts.getOrPut(empId) { mutableSetOf() }
             newMember.shifts?.forEach { shift ->
                 shift.shiftId?.let { id ->
                     shiftIdToNewOwner[id] = empId
+                    shiftSet.add("id:$id")
                 }
-                val key = "${shift.startDateTime}-${shift.workstationId}"
-                shiftKeyToNewOwner[key] = empId
+                shift.workstationId?.let { wsId ->
+                    val key = "${shift.startDateTime}-$wsId"
+                    shiftKeyToNewOwner[key] = empId
+                    shiftSet.add("key:$key")
+                }
             }
         }
         
+        val qStart = queryStart?.let { 
+            try { java.time.LocalDateTime.parse(it) } catch (e: Exception) { null } 
+        }
+        val qEnd = queryEnd?.let { 
+            try { java.time.LocalDateTime.parse(it) } catch (e: Exception) { null } 
+        }
+        
         // Iterate over current cache map once to filter shifts belonging to someone else now
+        // OR shifts that are no longer present in the updated query range for this cafe
         val updatedMap = currentMap.mapValues { (empId, member) ->
             val shifts = member.shifts
             if (shifts.isNullOrEmpty()) {
@@ -175,9 +196,39 @@ class ScheduleCache(context: Context) {
             } else {
                 val filteredShifts = shifts.filter { s ->
                     val sId = s.shiftId
-                    val sKey = "${s.startDateTime}-${s.workstationId}"
-                    val newOwnerId = sId?.let { shiftIdToNewOwner[it] } ?: shiftKeyToNewOwner[sKey]
-                    newOwnerId == null || newOwnerId == empId
+                    val sKey = s.workstationId?.let { wsId -> "${s.startDateTime}-$wsId" }
+                    
+                    val newOwnerId = if (sId != null) {
+                        shiftIdToNewOwner[sId]
+                    } else if (sKey != null) {
+                        shiftKeyToNewOwner[sKey]
+                    } else {
+                        null
+                    }
+                    
+                    if (newOwnerId != null && newOwnerId != empId) {
+                        return@filter false // Belongs to someone else now
+                    }
+                    
+                    // Cleanup deleted shifts: If a cached shift falls within the query date range 
+                    // for the queried cafe, but it isn't present in the updated response, delete it.
+                    if (qStart != null && qEnd != null && queryCafeNo != null) {
+                        val shiftTime = s.startDateTime?.let { 
+                            try { java.time.LocalDateTime.parse(it) } catch (e: Exception) { null } 
+                        }
+                        if (s.cafeNumber == queryCafeNo && shiftTime != null && !shiftTime.isBefore(qStart) && !shiftTime.isAfter(qEnd)) {
+                            val newSet = newEmployeeShifts[empId]
+                            val isPresent = newSet != null && (
+                                (sId != null && newSet.contains("id:$sId")) ||
+                                (sKey != null && newSet.contains("key:$sKey"))
+                            )
+                            if (!isPresent) {
+                                return@filter false // Shift was deleted
+                            }
+                        }
+                    }
+                    
+                    true
                 }
                 if (filteredShifts.size == shifts.size) {
                     member
@@ -196,7 +247,7 @@ class ScheduleCache(context: Context) {
                 val newShifts = newMember.shifts ?: emptyList()
                 
                 val combinedShifts = (existingShifts + newShifts).distinctBy { 
-                    it.shiftId ?: "${it.startDateTime}-${it.workstationId}" 
+                    it.shiftId ?: "${it.startDateTime}-${it.endDateTime}-${it.workstationId}-${it.cafeNumber}" 
                 }
                 
                 val existingAssoc = existingMember.associate
@@ -247,6 +298,11 @@ class ScheduleCache(context: Context) {
             .apply()
     }
 
+    fun getTeamScheduleUpdateTime(cafeNo: String?): Long {
+        val key = if (cafeNo != null) "team_schedule_last_update_time_$cafeNo" else "team_schedule_last_update_time"
+        return prefs.getLong(key, 0)
+    }
+
     fun saveTeamRoster(members: List<TeamMember>) {
         saveTeamSchedule(members)
     }
@@ -257,6 +313,40 @@ class ScheduleCache(context: Context) {
 
     fun isTeamRosterStale(cafeNo: String? = null): Boolean {
         return isTeamScheduleStale(cafeNo)
+    }
+
+    fun getTeamScheduleStartDate(cafeNo: String): String? {
+        return prefs.getString("team_schedule_start_date_$cafeNo", null)
+    }
+
+    fun getTeamScheduleEndDate(cafeNo: String): String? {
+        return prefs.getString("team_schedule_end_date_$cafeNo", null)
+    }
+
+    fun saveTeamScheduleDateRange(cafeNo: String, start: String, end: String) {
+        prefs.edit()
+            .putString("team_schedule_start_date_$cafeNo", start)
+            .putString("team_schedule_end_date_$cafeNo", end)
+            .apply()
+    }
+
+    fun updateTeamScheduleDateRange(cafeNo: String, start: String, end: String) {
+        val currentStart = getTeamScheduleStartDate(cafeNo)
+        val currentEnd = getTeamScheduleEndDate(cafeNo)
+        
+        val newStart = if (currentStart == null) start else {
+            try {
+                if (java.time.LocalDateTime.parse(start).isBefore(java.time.LocalDateTime.parse(currentStart))) start else currentStart
+            } catch (e: Exception) { start }
+        }
+        
+        val newEnd = if (currentEnd == null) end else {
+            try {
+                if (java.time.LocalDateTime.parse(end).isAfter(java.time.LocalDateTime.parse(currentEnd))) end else currentEnd
+            } catch (e: Exception) { end }
+        }
+        
+        saveTeamScheduleDateRange(cafeNo, newStart, newEnd)
     }
 
     fun getFavorites(): Set<String> {

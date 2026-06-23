@@ -53,6 +53,12 @@ class DayScheduleAdapter(
         notifyDataSetChanged()
     }
 
+    fun appendData(additionalDays: List<DaySchedule>) {
+        val oldSize = days.size
+        days = days + additionalDays
+        notifyItemRangeInserted(oldSize, additionalDays.size)
+    }
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): DayViewHolder {
         val view = LayoutInflater.from(parent.context).inflate(R.layout.item_day_schedule, parent, false)
         return DayViewHolder(view)
@@ -366,43 +372,6 @@ fun dpToPx(context: Context, dp: Int): Int {
 }
 
 fun getWorkstationDisplayName(workstationId: String?, fallbackName: String?): String {
-    val customNames = mapOf(
-        "QC_2" to "QC 2",
-        "1ST_CASHIER_1" to "Cashier 1",
-        "SANDWICH_2" to "Sandwich 2",
-        "SANDWICH_1" to "Sandwich 1",
-        "SALAD_1" to "Salad 1",
-        "SALAD_2" to "Salad 2",
-        "DTORDERTAKER_1" to "DriveThru",
-        "1ST_DR_1" to "Dining Room",
-        "1st_Cashier" to "Cashier 1",
-        "1st_Dr" to "Dining Room",
-        "DtOrderTaker" to "DriveThru",
-        "Sandwich_1" to "Sandwich 1",
-        "Sandwich_2" to "Sandwich 2",
-        "Qc_2" to "QC 2",
-        "1ST_SANDWICH_1" to "Sandwich 1",
-        "Bake" to "Baker",
-        "BAKER" to "Baker",
-        "1ST_CASHIER" to "Cashier 1",
-        "QC_1" to "QC 1",
-        "QC_2" to "QC 2",
-        "DTORDERTAKER" to "DriveThru",
-        "1ST_DR" to "Dining Room",
-        "MANAGER_1" to "Manager",
-        "MANAGER" to "Manager",
-        "MANAGERADMIN_1" to "Manager",
-        "MANAGERADMIN" to "Manager",
-        "PEOPLEMANAGEMENT_1" to "Manager",
-        "PEOPLEMANAGEMENT" to "Manager",
-        "LABOR_MANAGEMENT" to "Manager",
-        "LABORMANAGEMENT" to "Manager",
-        "Labor Management" to "Manager"
-    )
-        if (workstationId != null) {
-            val mapped = customNames[workstationId]
-            if (mapped != null) return mapped
-        }
-        return fallbackName ?: workstationId ?: "Unknown"
-    }
+    return com.anonymousassociate.betterpantry.utils.WorkstationUtils.getDisplayName(workstationId, fallbackName)
+}
     

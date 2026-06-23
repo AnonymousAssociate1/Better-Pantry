@@ -21,4 +21,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "Better Pantry"
 include(":app")
+include(":wear")
  

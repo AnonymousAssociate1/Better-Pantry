@@ -720,5 +720,12 @@ class PantryApiService(private val authManager: AuthManager) {
 data class GitHubRelease(
     val tag_name: String,
     val html_url: String,
-    val body: String?
+    val body: String?,
+    val assets: List<GitHubReleaseAsset>?
+)
+
+data class GitHubReleaseAsset(
+    val name: String,
+    val browser_download_url: String,
+    val size: Long
 )

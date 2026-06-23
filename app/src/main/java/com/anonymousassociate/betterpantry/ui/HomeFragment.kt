@@ -12,7 +12,9 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.RelativeLayout
 import android.widget.TextView
+import android.widget.Toast
 import android.widget.AutoCompleteTextView
+import android.widget.ImageView
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
@@ -44,6 +46,7 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.time.temporal.TemporalAdjusters
 import com.anonymousassociate.betterpantry.utils.ShiftCombiner
+import com.anonymousassociate.betterpantry.MainActivity
 
 import com.anonymousassociate.betterpantry.NotificationWorker
 import com.anonymousassociate.betterpantry.models.NotificationData
@@ -72,9 +75,57 @@ class HomeFragment : Fragment() {
     private lateinit var updatedText: TextView
     private lateinit var swipeRefreshLayout: SwipeRefreshLayout
     private lateinit var updateCard: androidx.cardview.widget.CardView
+    private lateinit var updateCardText: TextView
     private lateinit var updateDivider: View
+    private var pendingApkFile: java.io.File? = null
+    private val REQUEST_CODE_INSTALL_PERMISSION = 1001
     private lateinit var moneyPreferences: com.anonymousassociate.betterpantry.MoneyPreferences
     private lateinit var settingsPreferences: com.anonymousassociate.betterpantry.SettingsPreferences
+
+    private lateinit var exportCalendarTitleHeader: TextView
+    private lateinit var exportCalendarCardContainer: FrameLayout
+    private lateinit var exportCalendarCard: androidx.cardview.widget.CardView
+    private lateinit var exportSubtitleText: TextView
+    private lateinit var calendarDropdown: android.widget.AutoCompleteTextView
+    private var pendingShowExportDialog = false
+    private var activeDialogCalendarDropdown: android.widget.AutoCompleteTextView? = null
+    private var pendingShiftId: String? = null
+    private var pendingShiftStart: String? = null
+
+    private var isYourShiftsExpanded = true
+    private var isAvailableShiftsExpanded = true
+
+    private lateinit var yourShiftsHeaderLayout: View
+    private lateinit var yourShiftsTitleContainer: View
+    private lateinit var yourShiftsChevron: ImageView
+    private lateinit var exportButtonContainer: View
+
+    private lateinit var availableShiftsHeaderLayout: View
+    private lateinit var availableShiftsTitleContainer: View
+    private lateinit var availableShiftsChevron: ImageView
+
+    private var currentScheduledShifts: List<Shift> = emptyList()
+    private var selectedStartDate: LocalDate = LocalDate.now().minusDays(7)
+    private var selectedEndDate: LocalDate = LocalDate.now()
+    private var systemCalendars: List<AndroidCalendar> = emptyList()
+    private var selectedCalendarId: Long? = null
+
+    private val calendarPermissionLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val readGranted = permissions[android.Manifest.permission.READ_CALENDAR] ?: false
+        val writeGranted = permissions[android.Manifest.permission.WRITE_CALENDAR] ?: false
+        if (readGranted && writeGranted) {
+            loadCalendars()
+        } else {
+            pendingShowExportDialog = false
+            android.widget.Toast.makeText(
+                context,
+                "Calendar permissions are required to export shifts.",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+        }
+    }
 
     private var scheduleData: ScheduleData? = null
     private var moneyDialog: Dialog? = null
@@ -110,7 +161,75 @@ class HomeFragment : Fragment() {
         updatedText = view.findViewById(R.id.updatedText)
         swipeRefreshLayout = view.findViewById(R.id.swipeRefreshLayout)
         updateCard = view.findViewById(R.id.updateCard)
+        updateCardText = view.findViewById(R.id.updateCardText)
         updateDivider = view.findViewById(R.id.updateDivider)
+
+        exportCalendarTitleHeader = view.findViewById(R.id.exportCalendarTitleHeader)
+        exportCalendarCardContainer = view.findViewById(R.id.exportCalendarCardContainer)
+        exportCalendarCard = view.findViewById(R.id.exportCalendarCard)
+        exportSubtitleText = view.findViewById(R.id.exportSubtitleText)
+        calendarDropdown = view.findViewById(R.id.calendarDropdown)
+
+        yourShiftsHeaderLayout = view.findViewById(R.id.yourShiftsHeaderLayout)
+        yourShiftsTitleContainer = view.findViewById(R.id.yourShiftsTitleContainer)
+        yourShiftsChevron = view.findViewById(R.id.yourShiftsChevron)
+        exportButtonContainer = view.findViewById(R.id.exportButtonContainer)
+
+        availableShiftsHeaderLayout = view.findViewById(R.id.availableShiftsHeaderLayout)
+        availableShiftsTitleContainer = view.findViewById(R.id.availableShiftsTitleContainer)
+        availableShiftsChevron = view.findViewById(R.id.availableShiftsChevron)
+
+        updateExportSubtitleText()
+
+        calendarDropdown.setOnTouchListener { _, event ->
+            if (event.action == android.view.MotionEvent.ACTION_DOWN) {
+                if (!hasCalendarPermissions()) {
+                    pendingShowExportDialog = true
+                    requestCalendarPermissions()
+                    return@setOnTouchListener true
+                }
+            }
+            false
+        }
+
+        exportCalendarCard.setOnClickListener {
+            if (hasCalendarPermissions()) {
+                showExportDialog()
+            } else {
+                pendingShowExportDialog = true
+                requestCalendarPermissions()
+            }
+        }
+
+        yourShiftsTitleContainer.setOnClickListener {
+            isYourShiftsExpanded = !isYourShiftsExpanded
+            shiftsRecyclerView.visibility = if (isYourShiftsExpanded) View.VISIBLE else View.GONE
+            yourShiftsChevron.setImageResource(
+                if (isYourShiftsExpanded) R.drawable.ic_chevron_down else R.drawable.ic_chevron_right
+            )
+        }
+
+        availableShiftsTitleContainer.setOnClickListener {
+            isAvailableShiftsExpanded = !isAvailableShiftsExpanded
+            availableShiftsRecyclerView.visibility = if (isAvailableShiftsExpanded) View.VISIBLE else View.GONE
+            availableShiftsChevron.setImageResource(
+                if (isAvailableShiftsExpanded) R.drawable.ic_chevron_down else R.drawable.ic_chevron_right
+            )
+        }
+
+        exportButtonContainer.setOnClickListener {
+            if (hasCalendarPermissions()) {
+                showExportDialog()
+            } else {
+                pendingShowExportDialog = true
+                requestCalendarPermissions()
+            }
+        }
+
+        if (hasCalendarPermissions()) {
+            loadCalendars()
+        }
+
         val availabilityButton: android.widget.ImageButton = view.findViewById(R.id.availabilityButton)
         val moneyButton: android.widget.ImageButton = view.findViewById(R.id.moneyButton)
         
@@ -148,6 +267,14 @@ class HomeFragment : Fragment() {
 
         loadSchedule()
         checkForUpdates()
+
+        val focusShiftId = arguments?.getString("focus_shift_id")
+        val focusShiftStart = arguments?.getString("focus_shift_start")
+        if (focusShiftId != null) {
+            arguments?.remove("focus_shift_id")
+            arguments?.remove("focus_shift_start")
+            deepLinkToShift(focusShiftId, focusShiftStart)
+        }
     }
 
     private fun showMoneySettingsDialog() {
@@ -363,42 +490,52 @@ class HomeFragment : Fragment() {
     }
 
     private fun loadSchedule(forceRefresh: Boolean = false) {
-        if (!forceRefresh) {
-            if (!scheduleCache.isScheduleStale() && scheduleData != null) {
-                swipeRefreshLayout.isRefreshing = false
-                return
-            }
+        val willRefreshSchedule = forceRefresh || scheduleData == null || scheduleCache.isScheduleStale()
+        val willRefreshTeam = forceRefresh || scheduleCache.isTeamScheduleStale()
+
+        if (!willRefreshSchedule && !willRefreshTeam) {
+            swipeRefreshLayout.isRefreshing = false
+            return
         }
 
-        // Trigger animation immediately for auto-refresh
+        // Trigger animation immediately
         swipeRefreshLayout.post {
             swipeRefreshLayout.isRefreshing = true
         }
 
         lifecycleScope.launch {
             try {
-                // Use Repository
-                val schedule = repository.getSchedule(forceRefresh)
-                
-                // Also fetch Availability/TimeOff/MaxHours to keep cache fresh
-                if (forceRefresh) {
-                    launch(Dispatchers.IO) {
-                        repository.getAvailability(true)
-                        repository.getMaxHours(true)
-                        repository.getTimeOff(true)
+                if (willRefreshSchedule) {
+                    // Use Repository
+                    val schedule = repository.getSchedule(forceRefresh)
+                    
+                    // Also fetch Availability/TimeOff/MaxHours to keep cache fresh
+                    if (forceRefresh) {
+                        launch(Dispatchers.IO) {
+                            repository.getAvailability(true)
+                            repository.getMaxHours(true)
+                            repository.getTimeOff(true)
+                        }
+                    }
+
+                    schedule?.let {
+                        scheduleData = it
+                        prefetchTeamMembers(it, forceRefresh = forceRefresh)
+                        // Cache save handled by repository
+                        displaySchedule(it)
+                        updateTimestamp()
+                        startUpdateTimer()
+                    }
+                    checkNotifications()
+                } else {
+                    // Schedule is fresh, but team is stale. Prefetch team members
+                    val snapSchedule = scheduleData
+                    if (snapSchedule != null) {
+                        prefetchTeamMembers(snapSchedule, forceRefresh = false)
+                        // Re-render so shift cards pick up the freshly-populated team cache
+                        displaySchedule(snapSchedule)
                     }
                 }
-
-                schedule?.let {
-                    scheduleData = it
-                    // Cache save handled by repository
-                    displaySchedule(it)
-                    updateTimestamp()
-                    startUpdateTimer()
-                    
-                    prefetchTeamMembers(it)
-                }
-                checkNotifications()
             } catch (e: Exception) {
                 e.printStackTrace()
             } finally {
@@ -418,41 +555,50 @@ class HomeFragment : Fragment() {
         }
     }
 
-    private fun prefetchTeamMembers(schedule: ScheduleData) {
+    private suspend fun prefetchTeamMembers(schedule: ScheduleData, forceRefresh: Boolean = false) {
         val sampleShift = schedule.currentShifts?.firstOrNull { 
             it.cafeNumber != null && it.companyCode != null 
         } ?: schedule.track?.mapNotNull { it.primaryShiftRequest?.shift }?.firstOrNull { 
             it.cafeNumber != null && it.companyCode != null 
         }
 
-        if (sampleShift == null) return
-
-        val companyCode = sampleShift.companyCode!!
+        val companyCode = sampleShift?.companyCode ?: "101"
         val enabledCafeNos = settingsPreferences.getEnabledCafeNumbers(
             schedule,
             scheduleCache.getTeamSchedule(),
             authManager.getCafeNo(),
             authManager.getUserId()
         )
-        val finalCafes = if (enabledCafeNos.isEmpty()) listOf(sampleShift.cafeNumber!!) else enabledCafeNos
+        val finalCafes = if (enabledCafeNos.isEmpty()) {
+            val homeCafe = authManager.getCafeNo()
+            val sampleCafe = sampleShift?.cafeNumber
+            if (homeCafe != null) listOf(homeCafe) else (if (sampleCafe != null) listOf(sampleCafe) else emptyList())
+        } else {
+            enabledCafeNos
+        }
 
-        lifecycleScope.launch(Dispatchers.IO) {
+        if (finalCafes.isEmpty()) return
+
+        withContext(Dispatchers.IO) {
             try {
                 // Fetch for a wide range (e.g. today to +30 days) to cover the calendar view
-                val now = LocalDateTime.now()
-                val start = now.minusDays(1).withHour(0).withMinute(0).withSecond(0).format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
-                val end = now.plusDays(35).withHour(23).withMinute(59).withSecond(59).format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+                val range = com.anonymousassociate.betterpantry.utils.DateRangeUtils.getCoworkerQueryRange()
+                val start = range.first
+                val end = range.second
 
-                // Use Repository
+                val fetchedCafes = mutableSetOf<String>()
+                // First pass
                 coroutineScope {
                     finalCafes.map { cafeNo ->
+                        fetchedCafes.add(cafeNo)
                         async {
                             try {
                                 repository.getTeamMembers(
                                     cafeNo,
                                     companyCode,
                                     start,
-                                    end
+                                    end,
+                                    forceRefresh = forceRefresh
                                 )
                             } catch (e: Exception) {
                                 e.printStackTrace()
@@ -460,7 +606,34 @@ class HomeFragment : Fragment() {
                         }
                     }.awaitAll()
                 }
-                // Repository handles caching/merging
+
+                // Second pass to check if any new cafes were discovered/enabled from the newly populated cache
+                val updatedEnabledCafes = settingsPreferences.getEnabledCafeNumbers(
+                    schedule,
+                    scheduleCache.getTeamSchedule(),
+                    authManager.getCafeNo(),
+                    authManager.getUserId()
+                )
+                val newCafes = updatedEnabledCafes.filter { it !in fetchedCafes }
+                if (newCafes.isNotEmpty()) {
+                    coroutineScope {
+                        newCafes.map { cafeNo ->
+                            async {
+                                try {
+                                    repository.getTeamMembers(
+                                        cafeNo,
+                                        companyCode,
+                                        start,
+                                        end,
+                                        forceRefresh = forceRefresh
+                                    )
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
+                            }
+                        }.awaitAll()
+                    }
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -468,29 +641,52 @@ class HomeFragment : Fragment() {
     }
 
     private fun displaySchedule(schedule: ScheduleData) {
-        lifecycleScope.launch {
-            val (distinctShifts, availableShifts) = withContext(Dispatchers.Default) {
-                val dShifts = schedule.currentShifts?.filter { settingsPreferences.isCafeEnabled(it.cafeNumber) }?.distinctBy { it.shiftId }?.sortedBy { it.startDateTime }
-                
-                val aShifts = schedule.track?.filter { track ->
-                    val isTypeAvailable = track.type == "AVAILABLE"
-                    val primaryState = track.primaryShiftRequest?.state
-                    val isStateOpen = primaryState == "AVAILABLE" || primaryState == "APPROVED"
-                    val isClaimed = track.relatedShiftRequests?.any { it.state == "APPROVED" } == true
-                    
-                    isTypeAvailable && isStateOpen && !isClaimed
-                }?.sortedByDescending { it.primaryShiftRequest?.requestedAt }
-                 ?.mapNotNull { it.primaryShiftRequest?.shift }
-                 ?.filter { settingsPreferences.isCafeEnabled(it.cafeNumber) }
-                 ?.distinctBy { it.shiftId }
-                 ?.sortedBy { it.startDateTime } ?: emptyList()
-                 
-                Pair(dShifts, aShifts)
-            }
+        val distinctShifts = schedule.currentShifts?.filter { settingsPreferences.isCafeEnabled(it.cafeNumber) }?.distinctBy { it.shiftId }?.sortedBy { it.startDateTime }
+        
+        val availableShifts = schedule.track?.filter { track ->
+            val isTypeAvailable = track.type == "AVAILABLE"
+            val primaryState = track.primaryShiftRequest?.state
+            val isStateOpen = primaryState == "AVAILABLE" || primaryState == "APPROVED"
+            val isClaimed = track.relatedShiftRequests?.any { it.state == "APPROVED" } == true
+            
+            isTypeAvailable && isStateOpen && !isClaimed
+        }?.sortedByDescending { it.primaryShiftRequest?.requestedAt }
+         ?.mapNotNull { it.primaryShiftRequest?.shift }
+         ?.filter { settingsPreferences.isCafeEnabled(it.cafeNumber) }
+         ?.distinctBy { it.shiftId }
+         ?.sortedBy { it.startDateTime } ?: emptyList()
 
-            calendarAdapter.updateSchedule(schedule, scheduleCache.getTimeOff(), settingsPreferences.showAvailabilityOnCalendar, requireContext())
+        calendarAdapter.updateSchedule(schedule, scheduleCache.getTimeOff(), settingsPreferences.showAvailabilityOnCalendar, requireContext())
 
-            if (distinctShifts != null) {
+        currentScheduledShifts = distinctShifts ?: emptyList()
+
+        // Calculate the default week range on data load and update the export card subtitle
+        val today = java.time.LocalDate.now()
+        val startDate = if (today.dayOfWeek == java.time.DayOfWeek.WEDNESDAY) {
+            today
+        } else {
+            today.with(java.time.temporal.TemporalAdjusters.previous(java.time.DayOfWeek.WEDNESDAY))
+        }
+        val dates = (0 until 28).map { startDate.plusDays(it.toLong()) }
+        val defaultRange = getDefaultWeekRange(dates)
+        selectedStartDate = defaultRange.first
+        selectedEndDate = defaultRange.second
+        updateExportSubtitleText()
+        val vis = if (currentScheduledShifts.isNotEmpty()) View.VISIBLE else View.GONE
+        exportButtonContainer.visibility = vis
+        exportCalendarCardContainer.visibility = View.GONE
+        exportCalendarTitleHeader.visibility = View.GONE
+
+        if (distinctShifts != null && distinctShifts.isNotEmpty()) {
+            yourShiftsHeaderLayout.visibility = View.VISIBLE
+            shiftsRecyclerView.visibility = if (isYourShiftsExpanded) View.VISIBLE else View.GONE
+            yourShiftsChevron.setImageResource(
+                if (isYourShiftsExpanded) R.drawable.ic_chevron_down else R.drawable.ic_chevron_right
+            )
+            val existingAdapter = shiftsRecyclerView.adapter as? ShiftAdapter
+            if (existingAdapter != null) {
+                existingAdapter.updateData(distinctShifts)
+            } else {
                 val shiftAdapter = ShiftAdapter(
                     shifts = distinctShifts,
                     onShiftClick = { shift ->
@@ -504,9 +700,21 @@ class HomeFragment : Fragment() {
                     adapter = shiftAdapter
                 }
             }
+        } else {
+            yourShiftsHeaderLayout.visibility = View.GONE
+            shiftsRecyclerView.visibility = View.GONE
+        }
 
-            if (availableShifts.isNotEmpty()) {
-                availableShiftsTitle.visibility = View.VISIBLE
+        if (availableShifts.isNotEmpty()) {
+            availableShiftsHeaderLayout.visibility = View.VISIBLE
+            availableShiftsRecyclerView.visibility = if (isAvailableShiftsExpanded) View.VISIBLE else View.GONE
+            availableShiftsChevron.setImageResource(
+                if (isAvailableShiftsExpanded) R.drawable.ic_chevron_down else R.drawable.ic_chevron_right
+            )
+            val existingAdapter = availableShiftsRecyclerView.adapter as? ShiftAdapter
+            if (existingAdapter != null) {
+                existingAdapter.updateData(availableShifts)
+            } else {
                 val availableAdapter = ShiftAdapter(
                     shifts = availableShifts,
                     onShiftClick = { shift ->
@@ -539,14 +747,44 @@ class HomeFragment : Fragment() {
                     layoutManager = LinearLayoutManager(context)
                     adapter = availableAdapter
                 }
-            } else {
-                availableShiftsTitle.visibility = View.GONE
             }
+        } else {
+            availableShiftsHeaderLayout.visibility = View.GONE
+            availableShiftsRecyclerView.visibility = View.GONE
         }
+        checkPendingDeepLink()
     }
 
     private fun updateTimestamp() {
         updatedText.text = scheduleCache.getLastUpdateText()
+    }
+
+    fun deepLinkToShift(shiftId: String?, shiftStart: String?) {
+        pendingShiftId = shiftId
+        pendingShiftStart = shiftStart
+        checkPendingDeepLink()
+    }
+
+    fun checkPendingDeepLink() {
+        val mainActivity = activity as? MainActivity
+        val shiftId = pendingShiftId ?: mainActivity?.pendingShiftId ?: return
+        val shiftStart = pendingShiftStart ?: mainActivity?.pendingShiftStart
+
+        pendingShiftId = null
+        pendingShiftStart = null
+        if (mainActivity != null) {
+            mainActivity.pendingShiftId = null
+            mainActivity.pendingShiftStart = null
+        }
+
+        if (currentScheduledShifts.isEmpty()) return
+
+        val myShift = currentScheduledShifts.find { it.shiftId?.toString() == shiftId || it.startDateTime == shiftStart }
+        if (myShift != null) {
+            val shiftDate = myShift.startDateTime?.substring(0, 10)
+            val dayShifts = currentScheduledShifts.filter { it.startDateTime?.startsWith(shiftDate ?: "") == true }
+            showShiftDetailDialog(dayShifts, emptyList(), clickedDate = LocalDate.parse(shiftDate))
+        }
     }
 
     private fun startUpdateTimer() {
@@ -555,7 +793,8 @@ class HomeFragment : Fragment() {
             override fun run() {
                 updateTimestamp()
                 
-                if (scheduleCache.isScheduleStale()) {
+                // Reload if either the personal schedule OR team schedule is stale
+                if (scheduleCache.isScheduleStale() || scheduleCache.isTeamScheduleStale()) {
                     loadSchedule()
                 }
                 
@@ -1475,33 +1714,22 @@ class HomeFragment : Fragment() {
                 }
             }
 
-            val cachedMembers = scheduleCache.getTeamMembers(shiftId)
-            if (cachedMembers != null) {
-                updateChart(cachedMembers)
+            val globalTeam = scheduleCache.getTeamSchedule()
+            if (globalTeam != null) {
+                updateChart(globalTeam)
             }
-        
-            lifecycleScope.launch {
-                try {
-                    val startOfDay = LocalDateTime.parse(shift.startDateTime)
-                        .with(java.time.LocalTime.MIN)
-                        .format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
-                    
-                    val endOfDay = LocalDateTime.parse(shift.startDateTime)
-                        .with(java.time.LocalTime.MAX)
-                        .format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
 
-                    val teamMembers = repository.getTeamMembers(
-                        shift.cafeNumber,
-                        shift.companyCode,
-                        startOfDay,
-                        endOfDay
-                    )        
-                    if (teamMembers != null) {
-                        scheduleCache.saveTeamMembers(shiftId, teamMembers)
-                        updateChart(teamMembers)
+            if (globalTeam == null || scheduleCache.isTeamScheduleStale()) {
+                lifecycleScope.launch {
+                    try {
+                        scheduleData?.let { prefetchTeamMembers(it, forceRefresh = false) }
+                        val updatedTeam = scheduleCache.getTeamSchedule()
+                        if (updatedTeam != null) {
+                            updateChart(updatedTeam)
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
                     }
-                } catch (e: Exception) {
-                    e.printStackTrace()
                 }
             }
         } else {
@@ -1644,9 +1872,13 @@ class HomeFragment : Fragment() {
     // Helper method adapted for HomeFragment (Shift object)
     private fun findCoworkerShifts(targetShift: Shift, teamMembers: List<TeamMember>, myId: String?): List<EnrichedShift> {
         val coworkerShifts = mutableListOf<EnrichedShift>()
+        var totalChecked = 0
+        var overlapped = 0
+        var sameDayNonOverlapping = 0
         try {
             val myStart = LocalDateTime.parse(targetShift.startDateTime)
             val myEnd = LocalDateTime.parse(targetShift.endDateTime)
+            val targetDate = myStart.toLocalDate()
             
             teamMembers.forEach { tm: TeamMember ->
                 val isMe = tm.associate?.employeeId == myId
@@ -1660,21 +1892,27 @@ class HomeFragment : Fragment() {
                         val sStart = LocalDateTime.parse(s.startDateTime)
                         val sEnd = LocalDateTime.parse(s.endDateTime)
                         
-                        if (sStart.isBefore(myEnd) && sEnd.isAfter(myStart) && 
-                            (s.cafeNumber == null || s.cafeNumber == targetShift.cafeNumber)) {
-                            coworkerShifts.add(
-                                EnrichedShift(
-                                    shift = s,
-                                    firstName = firstName,
-                                    lastName = lastName,
-                                    isMe = isMe,
-                                    isAvailable = isAvailable
+                        if (sStart.toLocalDate() == targetDate && (s.cafeNumber == null || s.cafeNumber == targetShift.cafeNumber)) {
+                            totalChecked++
+                            if (sStart.isBefore(myEnd) && sEnd.isAfter(myStart)) {
+                                overlapped++
+                                coworkerShifts.add(
+                                    EnrichedShift(
+                                        shift = s,
+                                        firstName = firstName,
+                                        lastName = lastName,
+                                        isMe = isMe,
+                                        isAvailable = isAvailable
+                                    )
                                 )
-                            )
+                            } else {
+                                sameDayNonOverlapping++
+                            }
                         }
                     } catch(e: Exception) {}
                 }
             }
+            android.util.Log.d("BetterPantry", "findCoworkerShifts (Home): target=${targetShift.startDateTime}-${targetShift.endDateTime}, totalChecked=$totalChecked, overlapped=$overlapped, sameDayNonOverlapping=$sameDayNonOverlapping")
         } catch (e: Exception) { }
         return coworkerShifts.distinctBy { it.shift.shiftId }
     }
@@ -2099,9 +2337,11 @@ class HomeFragment : Fragment() {
                 val companyCode = shift.companyCode ?: scheduleData?.currentShifts?.firstOrNull()?.companyCode
                 
                 if (cafeNo != null && companyCode != null) {
-                    val now = LocalDateTime.now()
-                    val start = now.minusDays(1).withHour(0).withMinute(0).withSecond(0).format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
-                    val end = now.plusDays(35).withHour(23).withMinute(59).withSecond(59).format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+                    // Use the same date range as prefetchTeamMembers and PeopleFragment so we always
+                    // get a cache hit instead of triggering a divergent API call with a different window.
+                    val range = com.anonymousassociate.betterpantry.utils.DateRangeUtils.getCoworkerQueryRange()
+                    val start = range.first
+                    val end = range.second
                     
                     val teamMembers = repository.getTeamMembers(cafeNo, companyCode, start, end) ?: emptyList()
                     loadingDialog.dismiss()
@@ -2708,46 +2948,8 @@ class HomeFragment : Fragment() {
         
         return "Unknown"
     }
-
     private fun getWorkstationDisplayName(workstationId: String, fallbackName: String?): String {
-        val customNames = mapOf(
-            "QC_2" to "QC 2",
-            "1ST_CASHIER_1" to "Cashier 1",
-            "SANDWICH_2" to "Sandwich 2",
-            "SANDWICH_1" to "Sandwich 1",
-            "DTORDERTAKER_1" to "DriveThru",
-            "1ST_DR_1" to "Dining Room",
-            "1st_Cashier" to "Cashier 1",
-            "1st_Dr" to "Dining Room",
-            "DtOrderTaker" to "DriveThru",
-            "Sandwich_1" to "Sandwich 1",
-            "Sandwich_2" to "Sandwich 2",
-            "Qc_2" to "QC 2",
-            "1ST_SANDWICH_1" to "Sandwich 1",
-            "Bake" to "Baker",
-            "BAKER" to "Baker",
-            "SALAD" to "Salad 1",
-            "SANDWICH" to "Sandwich 1",
-            "1ST_CASHIER" to "Cashier 1",
-            "QC_1" to "QC 1",
-            "QC_2" to "QC 2",
-            "DTORDERTAKER" to "DriveThru",
-            "1ST_DR" to "Dining Room",
-            "MANAGER_1" to "Manager",
-            "MANAGER" to "Manager",
-            "MANAGERADMIN_1" to "Manager",
-            "MANAGERADMIN" to "Manager",
-            "PEOPLEMANAGEMENT_1" to "Manager",
-            "PEOPLEMANAGEMENT" to "Manager",
-            "LABOR_MANAGEMENT" to "Manager",
-            "LABORMANAGEMENT" to "Manager",
-            "Labor Management" to "Manager"
-        )
-        var name = customNames[workstationId]
-        if (name == null && fallbackName != null) {
-            name = customNames[fallbackName]
-        }
-        return name ?: fallbackName ?: "Unknown"
+        return com.anonymousassociate.betterpantry.utils.WorkstationUtils.getDisplayName(workstationId, fallbackName)
     }
 
     private fun getTimeAgo(requestedAt: String?): String {
@@ -2795,8 +2997,9 @@ class HomeFragment : Fragment() {
                     val currentVersion = com.anonymousassociate.betterpantry.BuildConfig.VERSION_NAME
                     if (isNewerVersion(currentVersion, release.tag_name)) {
                         updateAvailable = true
-                        updateUrl = release.html_url
-                        showUpdateCard(release.html_url)
+                        val apkAsset = release.assets?.find { it.name.endsWith(".apk") }
+                        updateUrl = apkAsset?.browser_download_url ?: release.html_url
+                        showUpdateCard(updateUrl)
                     }
                 }
             } catch (e: Exception) {
@@ -2810,7 +3013,110 @@ class HomeFragment : Fragment() {
         updateCard.visibility = View.VISIBLE
         updateDivider.visibility = View.VISIBLE
         updateCard.setOnClickListener {
-            (requireActivity() as? com.anonymousassociate.betterpantry.MainActivity)?.openBrowser(url)
+            if (url.endsWith(".apk", ignoreCase = true)) {
+                updateCard.isEnabled = false
+                downloadAndInstallApk(url)
+            } else {
+                (requireActivity() as? com.anonymousassociate.betterpantry.MainActivity)?.openBrowser(url)
+            }
+        }
+    }
+
+    private fun downloadAndInstallApk(apkUrl: String) {
+        lifecycleScope.launch {
+            try {
+                updateCardText.text = "Downloading Update... (0%)"
+                val file = withContext(Dispatchers.IO) {
+                    val client = okhttp3.OkHttpClient()
+                    val request = okhttp3.Request.Builder().url(apkUrl).build()
+                    val response = client.newCall(request).execute()
+                    if (!response.isSuccessful) throw java.io.IOException("Unexpected response code: $response")
+
+                    val body = response.body ?: throw java.io.IOException("Response body is null")
+                    val contentLength = body.contentLength()
+                    val cacheDir = requireContext().cacheDir
+                    val apksDir = java.io.File(cacheDir, "apks").apply { mkdirs() }
+                    val apkFile = java.io.File(apksDir, "update.apk")
+
+                    val inputStream = body.byteStream()
+                    val outputStream = java.io.FileOutputStream(apkFile)
+                    val buffer = ByteArray(8192)
+                    var bytesRead: Int
+                    var totalBytesRead: Long = 0
+
+                    while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                        outputStream.write(buffer, 0, bytesRead)
+                        totalBytesRead += bytesRead
+                        if (contentLength > 0) {
+                            val progress = ((totalBytesRead * 100) / contentLength).toInt()
+                            withContext(Dispatchers.Main) {
+                                updateCardText.text = "Downloading Update... ($progress%)"
+                            }
+                        }
+                    }
+                    outputStream.flush()
+                    outputStream.close()
+                    inputStream.close()
+                    apkFile
+                }
+
+                updateCardText.text = "Installing Update..."
+                checkInstallPermissionAndInstall(file)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                updateCardText.text = "Failed to download update"
+                updateCard.isEnabled = true
+                Toast.makeText(context, "Failed to download update: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun checkInstallPermissionAndInstall(file: java.io.File) {
+        val ctx = context ?: return
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            if (!ctx.packageManager.canRequestPackageInstalls()) {
+                pendingApkFile = file
+                val intent = android.content.Intent(
+                    android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    android.net.Uri.parse("package:${ctx.packageName}")
+                )
+                startActivityForResult(intent, REQUEST_CODE_INSTALL_PERMISSION)
+                Toast.makeText(ctx, "Please enable permission to install updates", Toast.LENGTH_LONG).show()
+                return
+            }
+        }
+        installApk(file)
+    }
+
+    private fun installApk(file: java.io.File) {
+        val ctx = context ?: return
+        try {
+            val authority = "${ctx.packageName}.fileprovider"
+            val uri = androidx.core.content.FileProvider.getUriForFile(ctx, authority, file)
+            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            ctx.startActivity(intent)
+            updateCard.isEnabled = true
+            updateCardText.text = "New update available"
+        } catch (e: Exception) {
+            e.printStackTrace()
+            updateCard.isEnabled = true
+            updateCardText.text = "New update available"
+            Toast.makeText(ctx, "Installation failed: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_CODE_INSTALL_PERMISSION) {
+            val file = pendingApkFile
+            if (file != null && file.exists()) {
+                pendingApkFile = null
+                checkInstallPermissionAndInstall(file)
+            }
         }
     }
 
@@ -2828,9 +3134,914 @@ class HomeFragment : Fragment() {
         return false
     }
 
+    private fun hasCalendarPermissions(): Boolean {
+        val ctx = context ?: return false
+        return androidx.core.content.ContextCompat.checkSelfPermission(
+            ctx,
+            android.Manifest.permission.READ_CALENDAR
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED &&
+                androidx.core.content.ContextCompat.checkSelfPermission(
+                    ctx,
+                    android.Manifest.permission.WRITE_CALENDAR
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun requestCalendarPermissions() {
+        calendarPermissionLauncher.launch(
+            arrayOf(
+                android.Manifest.permission.READ_CALENDAR,
+                android.Manifest.permission.WRITE_CALENDAR
+            )
+        )
+    }
+
+    private fun loadCalendars() {
+        val ctx = context ?: return
+        lifecycleScope.launch {
+            val calendars = withContext(Dispatchers.IO) {
+                val list = mutableListOf<AndroidCalendar>()
+                val projection = arrayOf(
+                    android.provider.CalendarContract.Calendars._ID,
+                    android.provider.CalendarContract.Calendars.CALENDAR_DISPLAY_NAME,
+                    android.provider.CalendarContract.Calendars.ACCOUNT_NAME,
+                    android.provider.CalendarContract.Calendars.ACCOUNT_TYPE,
+                    android.provider.CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL,
+                    android.provider.CalendarContract.Calendars.IS_PRIMARY
+                )
+                val uri = android.provider.CalendarContract.Calendars.CONTENT_URI
+                try {
+                    // Filter: only show contributor or editor calendars (access level >= 500)
+                    val selection = "${android.provider.CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL} >= 500"
+                    ctx.contentResolver.query(uri, projection, selection, null, null)?.use { cursor ->
+                        val idCol = cursor.getColumnIndex(android.provider.CalendarContract.Calendars._ID)
+                        val nameCol = cursor.getColumnIndex(android.provider.CalendarContract.Calendars.CALENDAR_DISPLAY_NAME)
+                        val accountCol = cursor.getColumnIndex(android.provider.CalendarContract.Calendars.ACCOUNT_NAME)
+                        val accountTypeCol = cursor.getColumnIndex(android.provider.CalendarContract.Calendars.ACCOUNT_TYPE)
+                        val accessCol = cursor.getColumnIndex(android.provider.CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL)
+                        val primaryCol = cursor.getColumnIndex(android.provider.CalendarContract.Calendars.IS_PRIMARY)
+                        
+                        if (idCol != -1 && nameCol != -1 && accountCol != -1 && accountTypeCol != -1 && accessCol != -1 && primaryCol != -1) {
+                            while (cursor.moveToNext()) {
+                                val id = cursor.getLong(idCol)
+                                val name = cursor.getString(nameCol) ?: "Calendar"
+                                val account = cursor.getString(accountCol) ?: "Unknown"
+                                val accountType = cursor.getString(accountTypeCol) ?: "com.google"
+                                val access = cursor.getInt(accessCol)
+                                val primary = cursor.getInt(primaryCol)
+                                list.add(AndroidCalendar(id, name, account, accountType, access, primary))
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+                
+                // Sort so that: Work contains first, then Home contains, then isPrimary == 1, then alphabetical
+                list.sortedWith(compareBy<AndroidCalendar> {
+                    val name = it.displayName.lowercase()
+                    !name.contains("work")
+                }.thenBy {
+                    val name = it.displayName.lowercase()
+                    !name.contains("home")
+                }.thenBy {
+                    it.isPrimary != 1
+                }.thenBy {
+                    it.displayName
+                })
+            }
+            systemCalendars = calendars
+            setupCalendarDropdown()
+            syncSelectedCalendar()
+            if (pendingShowExportDialog) {
+                pendingShowExportDialog = false
+                showExportDialog()
+            }
+        }
+    }
+
+    private fun selectCalendar(id: Long) {
+        val ctx = context ?: return
+        selectedCalendarId = id
+        val prefs = ctx.getSharedPreferences("BetterPantryPrefs", Context.MODE_PRIVATE)
+        prefs.edit().putLong("last_selected_calendar_id", id).apply()
+        
+        // Update home screen dropdown text
+        val selectedCal = systemCalendars.firstOrNull { it.id == id }
+        selectedCal?.let {
+            calendarDropdown.setText(it.displayName, false)
+        }
+        
+        // If export dialog's dropdown is visible, update it too
+        activeDialogCalendarDropdown?.setText(selectedCal?.displayName ?: "", false)
+
+        syncSelectedCalendar()
+    }
+
+    private fun syncSelectedCalendar() {
+        val ctx = context ?: return
+        val calId = selectedCalendarId ?: return
+        val targetCal = systemCalendars.firstOrNull { it.id == calId } ?: return
+        try {
+            val account = android.accounts.Account(targetCal.accountName, targetCal.accountType)
+            val extras = android.os.Bundle().apply {
+                putBoolean(android.content.ContentResolver.SYNC_EXTRAS_MANUAL, true)
+                putBoolean(android.content.ContentResolver.SYNC_EXTRAS_EXPEDITED, true)
+            }
+            android.content.ContentResolver.requestSync(
+                account,
+                android.provider.CalendarContract.AUTHORITY,
+                extras
+            )
+            android.util.Log.d("BetterPantryDebug", "Requested manual sync for account: ${targetCal.accountName}, type: ${targetCal.accountType}")
+        } catch (e: Exception) {
+            android.util.Log.e("BetterPantryDebug", "Failed to request sync: ${e.message}", e)
+        }
+    }
+
+    private fun updateCalendarDropdownSelection() {
+        val ctx = context ?: return
+        if (systemCalendars.isNotEmpty()) {
+            val prefs = ctx.getSharedPreferences("BetterPantryPrefs", Context.MODE_PRIVATE)
+            val lastSelectedId = prefs.getLong("last_selected_calendar_id", -1L)
+            var defaultIndex = 0
+            if (lastSelectedId != -1L) {
+                val idx = systemCalendars.indexOfFirst { it.id == lastSelectedId }
+                if (idx != -1) {
+                    defaultIndex = idx
+                }
+            }
+            val id = systemCalendars[defaultIndex].id
+            selectCalendar(id)
+        } else {
+            calendarDropdown.setText("", false)
+        }
+    }
+
+    private fun setupCalendarDropdown() {
+        val ctx = context ?: return
+        val names = systemCalendars.map { it.displayName }
+        
+        calendarDropdown.setDropDownBackgroundDrawable(
+            androidx.core.content.ContextCompat.getDrawable(ctx, R.drawable.bg_dropdown_popup)
+        )
+        
+        val adapter = android.widget.ArrayAdapter(
+            ctx,
+            R.layout.item_dropdown_menu,
+            names
+        )
+        calendarDropdown.setAdapter(adapter)
+
+        calendarDropdown.setOnItemClickListener { _, _, position, _ ->
+            if (position in systemCalendars.indices) {
+                val selected = systemCalendars[position]
+                selectCalendar(selected.id)
+            }
+        }
+
+        updateCalendarDropdownSelection()
+    }
+
+    private fun updateExportSubtitleText() {
+        val formatter = java.time.format.DateTimeFormatter.ofPattern("M/d/yy")
+        val rangeStr = "${selectedStartDate.format(formatter)} - ${selectedEndDate.format(formatter)}"
+        exportSubtitleText.text = rangeStr
+    }
+
+    private fun getDefaultWeekRange(dates: List<LocalDate>): Pair<LocalDate, LocalDate> {
+        val shifts = currentScheduledShifts
+        val weeks = listOf(
+            dates.subList(0, 7),
+            dates.subList(7, 14),
+            dates.subList(14, 21),
+            dates.subList(21, 28)
+        )
+        
+        var bestWeek = weeks.first()
+        for (week in weeks.reversed()) {
+            val weekStart = week.first()
+            val weekEnd = week.last()
+            val count = shifts.count {
+                try {
+                    val date = LocalDateTime.parse(it.startDateTime).toLocalDate()
+                    !date.isBefore(weekStart) && !date.isAfter(weekEnd)
+                } catch(e: Exception) { false }
+            }
+            if (count > 0) {
+                bestWeek = week
+                break
+            }
+        }
+        return Pair(bestWeek.first(), bestWeek.last())
+    }
+
+    private fun showExportDialog() {
+        val ctx = context ?: return
+        syncSelectedCalendar()
+        val dialog = Dialog(ctx)
+        dialog.setContentView(R.layout.dialog_export_calendar)
+        dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+
+        val dialogCloseButton = dialog.findViewById<android.widget.ImageButton>(R.id.dialogCloseButton)
+        val dialogCalendarRecyclerView = dialog.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.dialogCalendarRecyclerView)
+        val dialogCalendarDropdown = dialog.findViewById<android.widget.AutoCompleteTextView>(R.id.dialogCalendarDropdown)
+        val dialogExportButton = dialog.findViewById<android.widget.Button>(R.id.dialogExportButton)
+
+        // Track dialog calendar dropdown for bidirectional sync
+        activeDialogCalendarDropdown = dialogCalendarDropdown
+        dialog.setOnDismissListener {
+            activeDialogCalendarDropdown = null
+        }
+
+        // Close button click listener
+        dialogCloseButton?.setOnClickListener {
+            dialog.dismiss()
+        }
+
+        // Calculate the same 28 dates shown on the home page calendar
+        val today = LocalDate.now()
+        val startDate = if (today.dayOfWeek == DayOfWeek.WEDNESDAY) {
+            today
+        } else {
+            today.with(TemporalAdjusters.previous(DayOfWeek.WEDNESDAY))
+        }
+        val dates = (0 until 28).map { startDate.plusDays(it.toLong()) }
+
+        // Find the default range: latest week with shifts, or fallback to first week
+        val defaultRange = getDefaultWeekRange(dates)
+        var tempStartDate = defaultRange.first
+        var tempEndDate = defaultRange.second
+
+        // Setup dialog calendar dropdown
+        val names = systemCalendars.map { it.displayName }
+        dialogCalendarDropdown?.setDropDownBackgroundDrawable(
+            androidx.core.content.ContextCompat.getDrawable(ctx, R.drawable.bg_dropdown_popup)
+        )
+        val dialogAdapter = android.widget.ArrayAdapter(
+            ctx,
+            R.layout.item_dropdown_menu,
+            names
+        )
+        dialogCalendarDropdown?.setAdapter(dialogAdapter)
+        
+        val selectedCal = systemCalendars.firstOrNull { it.id == selectedCalendarId }
+        dialogCalendarDropdown?.setText(selectedCal?.displayName ?: "", false)
+
+        dialogCalendarDropdown?.setOnItemClickListener { _, _, position, _ ->
+            if (position in systemCalendars.indices) {
+                val selected = systemCalendars[position]
+                selectCalendar(selected.id)
+            }
+        }
+
+        // Compute workDates (days containing work shifts)
+        val workDates = mutableSetOf<LocalDate>()
+        for (shift in currentScheduledShifts) {
+            val startStr = shift.startDateTime ?: continue
+            try {
+                val date = java.time.LocalDateTime.parse(startStr).toLocalDate()
+                workDates.add(date)
+            } catch (e: Exception) {}
+        }
+
+        // Parse time off dates (approved and pending)
+        val approvedTimeOffDates = mutableSetOf<LocalDate>()
+        val pendingTimeOffDates = mutableSetOf<LocalDate>()
+        scheduleCache.getTimeOff()?.forEach { req ->
+            if (req.timeOffDate != null) {
+                try {
+                    val date = LocalDate.parse(req.timeOffDate)
+                    if (req.status == "APPROVED") {
+                        approvedTimeOffDates.add(date)
+                    } else if (req.status == "PENDING") {
+                        pendingTimeOffDates.add(date)
+                    }
+                } catch(e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+
+        // Setup the range calendar grid recycler view
+        dialogCalendarRecyclerView.layoutManager = androidx.recyclerview.widget.GridLayoutManager(ctx, 7)
+        val adapter = CalendarRangeAdapter(dates, today, tempStartDate, tempEndDate, workDates, approvedTimeOffDates, pendingTimeOffDates) { start, end ->
+            tempStartDate = start
+            tempEndDate = end
+        }
+        dialogCalendarRecyclerView.adapter = adapter
+
+        dialogExportButton.setOnClickListener {
+            val calId = selectedCalendarId
+            if (calId == null) {
+                android.widget.Toast.makeText(ctx, "Please select a target calendar first.", android.widget.Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            // Show progress dialog during sync request and calculation
+            val loadingDialog = android.app.Dialog(ctx)
+            loadingDialog.setContentView(R.layout.dialog_loading)
+            loadingDialog.window?.setLayout(android.view.ViewGroup.LayoutParams.WRAP_CONTENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT)
+            loadingDialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+            loadingDialog.setCancelable(false)
+            loadingDialog.findViewById<android.widget.TextView>(R.id.loadingMessage).text = "Syncing calendar..."
+            loadingDialog.show()
+
+            syncSelectedCalendar()
+            dialogExportButton.isEnabled = false
+
+            lifecycleScope.launch {
+                val events = getMergedEventsForRange(tempStartDate, tempEndDate)
+                val changes = withContext(Dispatchers.IO) {
+                    calculateCalendarChanges(events, tempStartDate, tempEndDate, calId)
+                }
+
+                loadingDialog.dismiss()
+                dialogExportButton.isEnabled = true
+
+                if (changes == null) {
+                    android.widget.Toast.makeText(ctx, "Error calculating changes.", android.widget.Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+
+                val totalChanges = changes.additions + changes.modifications + changes.deletions
+                if (totalChanges == 0) {
+                    val message = if (events.isEmpty()) {
+                        "No shifts to modify"
+                    } else {
+                        "Shifts already on calendar. If you recently deleted shifts, please wait a moment for sync to complete."
+                    }
+
+                    com.google.android.material.dialog.MaterialAlertDialogBuilder(ctx)
+                        .setMessage(message)
+                        .setPositiveButton("OK", null)
+                        .show()
+                } else {
+                    val sb = java.lang.StringBuilder()
+                    if (changes.deletions > 0) {
+                        val word = if (changes.deletions == 1) "event" else "events"
+                        sb.append("This will delete ${changes.deletions} calendar $word\n")
+                    }
+                    if (changes.additions > 0) {
+                        val word = if (changes.additions == 1) "event" else "events"
+                        sb.append("This will add ${changes.additions} calendar $word\n")
+                    }
+                    if (changes.modifications > 0) {
+                        val word = if (changes.modifications == 1) "event" else "events"
+                        sb.append("This will modify ${changes.modifications} calendar $word\n")
+                    }
+
+                    val confirmMessage = sb.toString().trim()
+
+                    com.google.android.material.dialog.MaterialAlertDialogBuilder(ctx)
+                        .setTitle("Are you sure?")
+                        .setMessage(confirmMessage)
+                        .setPositiveButton("Yes") { _, _ ->
+                            selectedStartDate = tempStartDate
+                            selectedEndDate = tempEndDate
+                            updateExportSubtitleText()
+
+                            dialog.dismiss()
+                            exportEventsToCalendar(changes)
+                        }
+                        .setNegativeButton("No", null)
+                        .show()
+                }
+            }
+        }
+
+        dialog.show()
+        
+        // Post-show layout sizing to ensure 90% screen width constraint
+        val metrics = ctx.resources.displayMetrics
+        val width = (metrics.widthPixels * 0.9).toInt()
+        dialog.window?.setLayout(width, ViewGroup.LayoutParams.WRAP_CONTENT)
+    }
+
+    private fun getMergedEventsForRange(startDate: LocalDate, endDate: LocalDate): List<CalendarEvent> {
+        val segments = mutableListOf<ShiftSegment>()
+        for (shift in currentScheduledShifts) {
+            val startStr = shift.startDateTime ?: continue
+            val endStr = shift.endDateTime ?: continue
+            val startDateTime = try {
+                java.time.LocalDateTime.parse(startStr)
+            } catch (e: Exception) {
+                continue
+            }
+            val shiftDate = startDateTime.toLocalDate()
+            if (shiftDate.isBefore(startDate) || shiftDate.isAfter(endDate)) {
+                continue
+            }
+
+            val constituent = shift.combinedShifts ?: listOf(shift)
+            for (subShift in constituent) {
+                val subStartStr = subShift.startDateTime ?: continue
+                val subEndStr = subShift.endDateTime ?: continue
+                val subStart = try {
+                    java.time.LocalDateTime.parse(subStartStr)
+                } catch (e: Exception) {
+                    continue
+                }
+                val subEnd = try {
+                    java.time.LocalDateTime.parse(subEndStr)
+                } catch (e: Exception) {
+                    continue
+                }
+                val pos = getWorkstationDisplayName(
+                    subShift.workstationId ?: subShift.workstationCode ?: "",
+                    subShift.workstationName
+                )
+                segments.add(ShiftSegment(subStart, subEnd, pos, subShift.cafeNumber, subShift.shiftId))
+            }
+        }
+
+        val sortedSegments = segments.sortedWith(compareBy({ it.start }, { it.end }))
+
+        val positionCombined = mutableListOf<ShiftSegment>()
+        for (seg in sortedSegments) {
+            if (positionCombined.isEmpty()) {
+                positionCombined.add(seg)
+            } else {
+                val last = positionCombined.last()
+                val gap = java.time.Duration.between(last.end, seg.start).toMinutes()
+                if (last.position == seg.position && last.cafeNumber == seg.cafeNumber && gap <= 5 && !seg.start.isBefore(last.start)) {
+                    val newEnd = if (seg.end.isAfter(last.end)) seg.end else last.end
+                    val newShiftId = listOfNotNull(last.shiftId, seg.shiftId).filter { it.isNotEmpty() }.joinToString(",")
+                    positionCombined[positionCombined.size - 1] = last.copy(end = newEnd, shiftId = newShiftId)
+                } else {
+                    positionCombined.add(seg)
+                }
+            }
+        }
+
+        val events = mutableListOf<CalendarEvent>()
+        for (seg in positionCombined) {
+            if (events.isEmpty()) {
+                events.add(CalendarEvent(seg.start, seg.end, seg.cafeNumber, mutableListOf(seg)))
+            } else {
+                val lastEvent = events.last()
+                val gap = java.time.Duration.between(lastEvent.end, seg.start).toMinutes()
+                if (lastEvent.cafeNumber == seg.cafeNumber && gap <= 5 && !seg.start.isBefore(lastEvent.start)) {
+                    if (seg.end.isAfter(lastEvent.end)) {
+                        lastEvent.end = seg.end
+                    }
+                    lastEvent.segments.add(seg)
+                } else {
+                    events.add(CalendarEvent(seg.start, seg.end, seg.cafeNumber, mutableListOf(seg)))
+                }
+            }
+        }
+
+        return events
+    }
+
+    private data class ExistingCalendarEvent(
+        val id: Long,
+        val title: String,
+        val description: String,
+        val start: Long,
+        val end: Long,
+        val shiftIds: List<String>
+    )
+
+    private fun exportEventsToCalendar(changes: CalendarChanges) {
+        val ctx = context ?: return
+
+        // Show progress dialog during export execution
+        val loadingDialog = android.app.Dialog(ctx)
+        loadingDialog.setContentView(R.layout.dialog_loading)
+        loadingDialog.window?.setLayout(android.view.ViewGroup.LayoutParams.WRAP_CONTENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT)
+        loadingDialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        loadingDialog.setCancelable(false)
+        loadingDialog.findViewById<android.widget.TextView>(R.id.loadingMessage).text = "Exporting shifts..."
+        loadingDialog.show()
+
+        lifecycleScope.launch {
+            val success = withContext(Dispatchers.IO) {
+                try {
+                    if (changes.operations.isNotEmpty()) {
+                        ctx.contentResolver.applyBatch(android.provider.CalendarContract.AUTHORITY, changes.operations)
+                    }
+                    true
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    android.util.Log.e("BetterPantryDebug", "Failed to apply batch calendar operations", e)
+                    false
+                }
+            }
+
+            loadingDialog.dismiss()
+
+            if (success) {
+                syncSelectedCalendar()
+                android.widget.Toast.makeText(ctx, "Calendar sync complete.", android.widget.Toast.LENGTH_SHORT).show()
+            } else {
+                android.widget.Toast.makeText(ctx, "Failed to sync shifts. Please try again.", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private data class CalendarChanges(
+        val additions: Int,
+        val modifications: Int,
+        val deletions: Int,
+        val operations: java.util.ArrayList<android.content.ContentProviderOperation>,
+        val targetEvents: List<CalendarEvent>,
+        val hasExistingEvents: Boolean
+    )
+
+    private fun getSegmentIds(event: CalendarEvent, zoneId: java.time.ZoneId): List<String> {
+        return event.segments.flatMap { seg ->
+            if (!seg.shiftId.isNullOrEmpty()) {
+                seg.shiftId.split(",")
+            } else {
+                val sM = seg.start.atZone(zoneId).toInstant().toEpochMilli()
+                val eM = seg.end.atZone(zoneId).toInstant().toEpochMilli()
+                listOf("$sM-$eM-${seg.position}")
+            }
+        }
+    }
+
+    private fun isShiftPickedUp(shiftIds: List<String>, start: java.time.LocalDateTime, end: java.time.LocalDateTime, position: String): Boolean {
+        val track = scheduleData?.track ?: return false
+        return track.any { item ->
+            val request = item.primaryShiftRequest
+            val shift = request?.shift
+            if (shift != null) {
+                val requestShiftId = shift.shiftId
+                val match = if (requestShiftId != null && shiftIds.isNotEmpty()) {
+                    shiftIds.contains(requestShiftId)
+                } else {
+                    try {
+                        val s = java.time.LocalDateTime.parse(shift.startDateTime)
+                        val e = java.time.LocalDateTime.parse(shift.endDateTime)
+                        s == start && e == end && (shift.workstationName == position || shift.workstationId == position)
+                    } catch (ex: Exception) { false }
+                }
+                match && (request.state == "APPROVED" || request.state == "COMPLETED" || request.state == "ACCEPTED")
+            } else false
+        }
+    }
+
+    private fun calculateCalendarChanges(
+        targetEvents: List<CalendarEvent>,
+        startDate: LocalDate,
+        endDate: LocalDate,
+        calendarId: Long
+    ): CalendarChanges? {
+        val ctx = context ?: return null
+        try {
+            val zoneId = java.time.ZoneId.systemDefault()
+            val startMillis = startDate.atStartOfDay(zoneId).toInstant().toEpochMilli()
+            val endMillis = endDate.plusDays(1).atStartOfDay(zoneId).toInstant().toEpochMilli()
+
+            val existingBpEvents = mutableListOf<ExistingCalendarEvent>()
+            val eventUri = android.provider.CalendarContract.Events.CONTENT_URI
+
+            // DEBUG LOGGING START
+            android.util.Log.d("BetterPantryDebug", "--- CHANGES: startDate=$startDate, endDate=$endDate, calendarId=$calendarId ---")
+            android.util.Log.d("BetterPantryDebug", "Target events list count: ${targetEvents.size}")
+            targetEvents.forEachIndexed { i, ev ->
+                android.util.Log.d("BetterPantryDebug", "Target event #$i: start=${ev.start}, end=${ev.end}, shiftIds=${getSegmentIds(ev, zoneId)}")
+            }
+            try {
+                val debugProjection = arrayOf(
+                    android.provider.CalendarContract.Events._ID,
+                    android.provider.CalendarContract.Events.TITLE,
+                    android.provider.CalendarContract.Events.DESCRIPTION,
+                    android.provider.CalendarContract.Events.DTSTART,
+                    android.provider.CalendarContract.Events.DTEND,
+                    android.provider.CalendarContract.Events.DELETED
+                )
+                val debugSelection = "${android.provider.CalendarContract.Events.CALENDAR_ID} = ? AND " +
+                                     "${android.provider.CalendarContract.Events.DTSTART} >= ? AND " +
+                                     "${android.provider.CalendarContract.Events.DTSTART} <= ?"
+                val debugSelectionArgs = arrayOf(calendarId.toString(), startMillis.toString(), endMillis.toString())
+                ctx.contentResolver.query(eventUri, debugProjection, debugSelection, debugSelectionArgs, null)?.use { cursor ->
+                    val idCol = cursor.getColumnIndex(android.provider.CalendarContract.Events._ID)
+                    val titleCol = cursor.getColumnIndex(android.provider.CalendarContract.Events.TITLE)
+                    val descCol = cursor.getColumnIndex(android.provider.CalendarContract.Events.DESCRIPTION)
+                    val startCol = cursor.getColumnIndex(android.provider.CalendarContract.Events.DTSTART)
+                    val endCol = cursor.getColumnIndex(android.provider.CalendarContract.Events.DTEND)
+                    val deletedCol = cursor.getColumnIndex(android.provider.CalendarContract.Events.DELETED)
+                    android.util.Log.d("BetterPantryDebug", "CHANGES RAW EVENTS COUNT: ${cursor.count}")
+                    while (cursor.moveToNext()) {
+                        val id = cursor.getLong(idCol)
+                        val title = cursor.getString(titleCol) ?: ""
+                        val desc = cursor.getString(descCol) ?: ""
+                        val startVal = cursor.getLong(startCol)
+                        val endVal = cursor.getLong(endCol)
+                        val deletedVal = cursor.getInt(deletedCol)
+                        val startDt = java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(startVal), zoneId)
+                        val endDt = java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(endVal), zoneId)
+                        android.util.Log.d("BetterPantryDebug", "CHANGES RAW EVENT: id=$id, title='$title', deleted=$deletedVal, start=$startDt, end=$endDt, hasBP=${desc.contains("[BetterPantry]", ignoreCase = true)}")
+                    }
+                }
+            } catch (ex: Exception) {
+                android.util.Log.e("BetterPantryDebug", "Error running debug query: ${ex.message}", ex)
+            }
+            // DEBUG LOGGING END
+
+            val projection = arrayOf(
+                android.provider.CalendarContract.Events._ID,
+                android.provider.CalendarContract.Events.TITLE,
+                android.provider.CalendarContract.Events.DESCRIPTION,
+                android.provider.CalendarContract.Events.DTSTART,
+                android.provider.CalendarContract.Events.DTEND
+            )
+            
+            val selection = "${android.provider.CalendarContract.Events.CALENDAR_ID} = ? AND " +
+                            "${android.provider.CalendarContract.Events.DTSTART} >= ? AND " +
+                            "${android.provider.CalendarContract.Events.DTSTART} <= ? AND " +
+                            "${android.provider.CalendarContract.Events.DELETED} = 0"
+            val selectionArgs = arrayOf(calendarId.toString(), startMillis.toString(), endMillis.toString())
+
+            ctx.contentResolver.query(eventUri, projection, selection, selectionArgs, null)?.use { cursor ->
+                val idCol = cursor.getColumnIndex(android.provider.CalendarContract.Events._ID)
+                val titleCol = cursor.getColumnIndex(android.provider.CalendarContract.Events.TITLE)
+                val descCol = cursor.getColumnIndex(android.provider.CalendarContract.Events.DESCRIPTION)
+                val startCol = cursor.getColumnIndex(android.provider.CalendarContract.Events.DTSTART)
+                val endCol = cursor.getColumnIndex(android.provider.CalendarContract.Events.DTEND)
+                
+                if (idCol != -1 && titleCol != -1 && descCol != -1 && startCol != -1 && endCol != -1) {
+                    while (cursor.moveToNext()) {
+                        val id = cursor.getLong(idCol)
+                        val title = cursor.getString(titleCol) ?: ""
+                        val desc = cursor.getString(descCol) ?: ""
+                        val startVal = cursor.getLong(startCol)
+                        val endVal = cursor.getLong(endCol)
+                        
+                        if (desc.contains("[BetterPantry]", ignoreCase = true)) {
+                            val shiftIds = mutableListOf<String>()
+                            val lines = desc.split("\n")
+                            val shiftLine = lines.find { it.startsWith("Shift IDs:") }
+                            if (shiftLine != null) {
+                                val idsStr = shiftLine.removePrefix("Shift IDs:").trim()
+                                if (idsStr.isNotEmpty()) {
+                                    shiftIds.addAll(idsStr.split(","))
+                                }
+                            }
+                            existingBpEvents.add(ExistingCalendarEvent(id, title, desc, startVal, endVal, shiftIds))
+                        }
+                    }
+                }
+            }
+
+            var additions = 0
+            var modifications = 0
+            var deletions = 0
+
+            val operations = java.util.ArrayList<android.content.ContentProviderOperation>()
+            val matchedExistingEventIds = mutableSetOf<Long>()
+            val targetEventsToInsert = targetEvents.toMutableList()
+
+            for (existing in existingBpEvents) {
+                val matchedTargetEvent = targetEventsToInsert.find { target ->
+                    val targetIds = getSegmentIds(target, zoneId)
+                    val hasOverlap = existing.shiftIds.any { it in targetIds }
+                    
+                    hasOverlap || run {
+                        val existingStart = java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(existing.start), zoneId)
+                        val existingEnd = java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(existing.end), zoneId)
+                        existingStart == target.start && existingEnd == target.end
+                    }
+                }
+
+                if (matchedTargetEvent != null) {
+                    val targetStartMillis = matchedTargetEvent.start.atZone(zoneId).toInstant().toEpochMilli()
+                    val targetEndMillis = matchedTargetEvent.end.atZone(zoneId).toInstant().toEpochMilli()
+
+                    val descBody = if (matchedTargetEvent.segments.size == 1) {
+                        matchedTargetEvent.segments[0].position
+                    } else {
+                        val formatter = java.time.format.DateTimeFormatter.ofPattern("h:mma", java.util.Locale.US)
+                        matchedTargetEvent.segments.joinToString("\n") { seg ->
+                            val startStr = seg.start.format(formatter)
+                            val endStr = seg.end.format(formatter)
+                            "$startStr - $endStr ${seg.position}"
+                        }
+                    }
+                    val targetDesc = "$descBody\n\n[BetterPantry]\nShift IDs: ${getSegmentIds(matchedTargetEvent, zoneId).joinToString(",")}"
+
+                    val cafeNo = matchedTargetEvent.cafeNumber
+                    val cafeInfo = scheduleData?.cafeList?.firstOrNull {
+                        settingsPreferences.getCafeNumberFromDepartment(it.departmentName, it.address?.addressLine) == cafeNo
+                    }
+                    val address = cafeInfo?.address ?: cafeNo?.let { settingsPreferences.getAddressFromSavedName(it) }
+                    val addressLine = address?.addressLine ?: ""
+                    val city = address?.city ?: ""
+                    val state = address?.state ?: ""
+                    val zipCode = address?.zipCode ?: ""
+                    val suffix = listOf(addressLine, city, state, zipCode).filter { it.isNotEmpty() }.joinToString(", ")
+                    val targetLocation = if (suffix.isNotEmpty()) suffix else settingsPreferences.getCafeDisplayName(cafeNo, scheduleData?.cafeList)
+
+                    if (existing.start != targetStartMillis || existing.end != targetEndMillis || 
+                        existing.description != targetDesc || existing.title != "Panera Shift") {
+                        modifications++
+
+                        val updateValues = android.content.ContentValues().apply {
+                            put(android.provider.CalendarContract.Events.DTSTART, targetStartMillis)
+                            put(android.provider.CalendarContract.Events.DTEND, targetEndMillis)
+                            put(android.provider.CalendarContract.Events.DESCRIPTION, targetDesc)
+                            put(android.provider.CalendarContract.Events.EVENT_LOCATION, targetLocation)
+                            put(android.provider.CalendarContract.Events.TITLE, "Panera Shift")
+                        }
+                        val updateUri = android.content.ContentUris.withAppendedId(android.provider.CalendarContract.Events.CONTENT_URI, existing.id)
+                        val op = android.content.ContentProviderOperation.newUpdate(updateUri)
+                            .withValues(updateValues)
+                            .build()
+                        operations.add(op)
+                    }
+
+                    matchedExistingEventIds.add(existing.id)
+                    targetEventsToInsert.remove(matchedTargetEvent)
+                } else {
+                    val existingStart = java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(existing.start), zoneId)
+                    val existingEnd = java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(existing.end), zoneId)
+                    
+                    val descBody = existing.description.substringBefore("\n\n")
+                    val positionName = if (descBody.contains(" - ")) {
+                        val postDash = descBody.substringAfterLast(" - ")
+                        postDash.substringAfter(" ").trim()
+                    } else {
+                        descBody.trim()
+                    }
+                    
+                    if (isShiftPickedUp(existing.shiftIds, existingStart, existingEnd, positionName)) {
+                        deletions++
+
+                        val deleteUri = android.content.ContentUris.withAppendedId(android.provider.CalendarContract.Events.CONTENT_URI, existing.id)
+                        val op = android.content.ContentProviderOperation.newDelete(deleteUri).build()
+                        operations.add(op)
+                    }
+                }
+            }
+
+            additions = targetEventsToInsert.size
+            for (event in targetEventsToInsert) {
+                val values = android.content.ContentValues().apply {
+                    put(android.provider.CalendarContract.Events.CALENDAR_ID, calendarId)
+                    put(android.provider.CalendarContract.Events.TITLE, "Panera Shift")
+
+                    val descBody = if (event.segments.size == 1) {
+                        event.segments[0].position
+                    } else {
+                        val formatter = java.time.format.DateTimeFormatter.ofPattern("h:mma", java.util.Locale.US)
+                        event.segments.joinToString("\n") { seg ->
+                            val startStr = seg.start.format(formatter)
+                            val endStr = seg.end.format(formatter)
+                            "$startStr - $endStr ${seg.position}"
+                        }
+                    }
+                    val desc = "$descBody\n\n[BetterPantry]\nShift IDs: ${getSegmentIds(event, zoneId).joinToString(",")}"
+                    put(android.provider.CalendarContract.Events.DESCRIPTION, desc)
+
+                    val cafeNo = event.cafeNumber
+                    val cafeInfo = scheduleData?.cafeList?.firstOrNull {
+                        settingsPreferences.getCafeNumberFromDepartment(it.departmentName, it.address?.addressLine) == cafeNo
+                    }
+                    val address = cafeInfo?.address ?: cafeNo?.let { settingsPreferences.getAddressFromSavedName(it) }
+                    val addressLine = address?.addressLine ?: ""
+                    val city = address?.city ?: ""
+                    val state = address?.state ?: ""
+                    val zipCode = address?.zipCode ?: ""
+                    val suffix = listOf(addressLine, city, state, zipCode).filter { it.isNotEmpty() }.joinToString(", ")
+                    val locationStr = if (suffix.isNotEmpty()) suffix else settingsPreferences.getCafeDisplayName(cafeNo, scheduleData?.cafeList)
+
+                    put(android.provider.CalendarContract.Events.EVENT_LOCATION, locationStr)
+
+                    val startVal = event.start.atZone(zoneId).toInstant().toEpochMilli()
+                    val endVal = event.end.atZone(zoneId).toInstant().toEpochMilli()
+
+                    put(android.provider.CalendarContract.Events.DTSTART, startVal)
+                    put(android.provider.CalendarContract.Events.DTEND, endVal)
+                    put(android.provider.CalendarContract.Events.EVENT_TIMEZONE, zoneId.id)
+                }
+
+                val op = android.content.ContentProviderOperation.newInsert(android.provider.CalendarContract.Events.CONTENT_URI)
+                    .withValues(values)
+                    .build()
+                operations.add(op)
+            }
+
+            return CalendarChanges(additions, modifications, deletions, operations, targetEvents, existingBpEvents.isNotEmpty())
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return null
+        }
+    }
+
     companion object {
         private var hasCheckedForUpdates = false
         private var updateAvailable = false
         private var updateUrl: String? = null
     }
 }
+
+private data class AndroidCalendar(
+    val id: Long,
+    val displayName: String,
+    val accountName: String,
+    val accountType: String,
+    val accessLevel: Int,
+    val isPrimary: Int
+)
+
+private data class ShiftSegment(
+    val start: java.time.LocalDateTime,
+    val end: java.time.LocalDateTime,
+    val position: String,
+    val cafeNumber: String?,
+    val shiftId: String? = null
+)
+
+private data class CalendarEvent(
+    var start: java.time.LocalDateTime,
+    var end: java.time.LocalDateTime,
+    val cafeNumber: String?,
+    val segments: MutableList<ShiftSegment>
+)
+
+private class CalendarRangeAdapter(
+    private val dates: List<java.time.LocalDate>,
+    private val today: java.time.LocalDate,
+    private var selectedStart: java.time.LocalDate,
+    private var selectedEnd: java.time.LocalDate,
+    private val workDates: Set<java.time.LocalDate>,
+    private val approvedTimeOffDates: Set<java.time.LocalDate>,
+    private val pendingTimeOffDates: Set<java.time.LocalDate>,
+    private val onRangeChanged: (java.time.LocalDate, java.time.LocalDate) -> Unit
+) : androidx.recyclerview.widget.RecyclerView.Adapter<CalendarRangeAdapter.RangeViewHolder>() {
+
+    override fun onCreateViewHolder(parent: android.view.ViewGroup, viewType: Int): RangeViewHolder {
+        val view = android.view.LayoutInflater.from(parent.context).inflate(R.layout.item_calendar_range_day, parent, false)
+        return RangeViewHolder(view)
+    }
+
+    override fun onBindViewHolder(holder: RangeViewHolder, position: Int) {
+        holder.bind(dates[position])
+    }
+
+    override fun getItemCount() = dates.size
+
+    inner class RangeViewHolder(itemView: android.view.View) : androidx.recyclerview.widget.RecyclerView.ViewHolder(itemView) {
+        private val card: com.google.android.material.card.MaterialCardView = itemView.findViewById(R.id.rangeDateCard)
+        private val dayText: android.widget.TextView = itemView.findViewById(R.id.rangeDateText)
+
+        fun bind(date: java.time.LocalDate) {
+            dayText.text = date.dayOfMonth.toString()
+
+            val isSelected = !date.isBefore(selectedStart) && !date.isAfter(selectedEnd)
+            val isToday = date == today
+            val hasWorkShift = workDates.contains(date)
+            val isApprovedOff = approvedTimeOffDates.contains(date)
+            val isPendingOff = pendingTimeOffDates.contains(date)
+
+            // Determine Background and Text color
+            // Priority: Shift > Approved Off > Pending Off > Default
+            when {
+                hasWorkShift -> {
+                    card.setCardBackgroundColor(androidx.core.content.ContextCompat.getColor(itemView.context, R.color.work_day_green))
+                    dayText.setTextColor(android.graphics.Color.WHITE)
+                }
+                isApprovedOff -> {
+                    card.setCardBackgroundColor(androidx.core.content.ContextCompat.getColor(itemView.context, R.color.time_off_pastel_yellow))
+                    dayText.setTextColor(android.graphics.Color.WHITE)
+                }
+                isPendingOff -> {
+                    card.setCardBackgroundColor(androidx.core.content.ContextCompat.getColor(itemView.context, android.R.color.holo_orange_dark))
+                    dayText.setTextColor(android.graphics.Color.WHITE)
+                }
+                else -> {
+                    card.setCardBackgroundColor(androidx.core.content.ContextCompat.getColor(itemView.context, R.color.card_background_color))
+                    dayText.setTextColor(androidx.core.content.ContextCompat.getColor(itemView.context, R.color.text_primary))
+                }
+            }
+
+            // Determine border stroke width and color
+            val density = itemView.context.resources.displayMetrics.density
+            if (isSelected) {
+                card.setStrokeColor(android.content.res.ColorStateList.valueOf(android.graphics.Color.BLACK))
+                card.setStrokeWidth((3 * density).toInt())
+            } else if (isToday) {
+                card.setStrokeColor(androidx.core.content.ContextCompat.getColorStateList(itemView.context, R.color.work_day_green))
+                card.setStrokeWidth((2 * density).toInt())
+            } else {
+                card.setStrokeColor(androidx.core.content.ContextCompat.getColorStateList(itemView.context, R.color.calendar_border))
+                card.setStrokeWidth((1 * density).toInt())
+            }
+
+            card.setOnClickListener {
+                if (selectedStart == selectedEnd && !date.isBefore(selectedStart)) {
+                    selectedEnd = date
+                } else {
+                    selectedStart = date
+                    selectedEnd = date
+                }
+                notifyDataSetChanged()
+                onRangeChanged(selectedStart, selectedEnd)
+            }
+        }
+    }
+}
+

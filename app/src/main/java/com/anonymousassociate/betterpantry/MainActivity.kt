@@ -45,6 +45,9 @@ class MainActivity : AppCompatActivity() {
     lateinit var repository: PantryRepository
         private set
 
+    var pendingShiftId: String? = null
+    var pendingShiftStart: String? = null
+
     private var isAuthenticating = false
     private var isAuthenticated = false
     private var hasShownBiometricThisSession = false
@@ -87,6 +90,9 @@ class MainActivity : AppCompatActivity() {
 
         // Initialize Notification Channels
         NotificationWorker.createNotificationChannels(this)
+        
+        // Ensure paycheck notifications are scheduled consistently
+        PaycheckReceiver.checkAndSchedulePaycheck(this)
 
         askNotificationPermission()
 
@@ -299,10 +305,13 @@ class MainActivity : AppCompatActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        setIntent(intent)
         handleOAuthCallback(intent)
         parseIntentForNotification(intent)
         if (pendingNotificationJson != null && isAuthenticated) {
             proceedToApp()
+        } else if (isAuthenticated) {
+            handleDeepLink(intent)
         }
     }
 
@@ -528,6 +537,51 @@ class MainActivity : AppCompatActivity() {
         }
         
         checkAndShowWhatsNew()
+
+        if (intent != null) {
+            handleDeepLink(intent)
+        }
+    }
+
+    private fun handleDeepLink(intent: Intent?) {
+        if (intent == null || !isAuthenticated) return
+        val action = intent.action ?: return
+
+        // Consume action to prevent multiple trigger on rotations
+        intent.action = null
+
+        when (action) {
+            "OPEN_SHIFT_DETAILS" -> {
+                val shiftId = intent.getStringExtra("shift_id")
+                val shiftStart = intent.getStringExtra("shift_start")
+
+                pendingShiftId = shiftId
+                pendingShiftStart = shiftStart
+
+                // Navigate to Home tab
+                supportFragmentManager.popBackStack(null, FragmentManager.POP_BACK_STACK_INCLUSIVE)
+                binding.bottomNavigation.selectedItemId = R.id.nav_home
+
+                // Trigger if HomeFragment is already running
+                val currentFragment = supportFragmentManager.findFragmentById(binding.fragmentContainer.id)
+                if (currentFragment is com.anonymousassociate.betterpantry.ui.HomeFragment) {
+                    currentFragment.checkPendingDeepLink()
+                }
+            }
+            "OPEN_SCHEDULE_TODAY" -> {
+                binding.bottomNavigation.selectedItemId = R.id.nav_people
+
+                val scheduleFragment = com.anonymousassociate.betterpantry.ui.ScheduleFragment().apply {
+                    arguments = Bundle().apply {
+                        putBoolean("auto_expand_today", true)
+                    }
+                }
+                supportFragmentManager.beginTransaction()
+                    .replace(binding.fragmentContainer.id, scheduleFragment)
+                    .addToBackStack(null)
+                    .commit()
+            }
+        }
     }
 
     private fun checkAndShowWhatsNew() {
@@ -694,6 +748,11 @@ class MainActivity : AppCompatActivity() {
 
     fun logout() {
         authManager.clearTokens()
+        val scheduleCache = com.anonymousassociate.betterpantry.ScheduleCache(this)
+        scheduleCache.clear()
+        com.anonymousassociate.betterpantry.ScheduleCache.clearCache()
+        com.anonymousassociate.betterpantry.widgets.WidgetUpdater.updateAllWidgets(this)
+
         getSharedPreferences("settings_prefs", Context.MODE_PRIVATE)
             .edit()
             .putLong("last_closed_timestamp", 0L)
@@ -813,31 +872,58 @@ class MainActivity : AppCompatActivity() {
                             // We can use the current schedule's range or default to "Next 30 days" which matches getSchedule(30).
                             // getSchedule(30) fetches 30 days.
                             // So we should fetch team members for 30 days.
-                            val start = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ISO_DATE)
-                            val end = java.time.LocalDate.now().plusDays(30).format(java.time.format.DateTimeFormatter.ISO_DATE)
+                            val range = com.anonymousassociate.betterpantry.utils.DateRangeUtils.getCoworkerQueryRange()
+                            val start = range.first
+                            val end = range.second
                             
                             // We need cafeNo and companyCode. We can get them from the schedule or user profile if stored.
                             // But the repo/apiService needs them passed.
                             // We can try to extract from the just-fetched schedule?
-                            schedule?.currentShifts?.firstOrNull()?.let { firstShift ->
-                                val company = firstShift.companyCode
-                                val settingsPrefs = SettingsPreferences(this@MainActivity)
-                                val enabledCafeNos = settingsPrefs.getEnabledCafeNumbers(
-                                    schedule,
-                                    ScheduleCache(this@MainActivity).getTeamSchedule(),
-                                    authManager.getCafeNo(),
-                                    authManager.getUserId()
-                                )
+                            val sampleShift = schedule?.currentShifts?.firstOrNull {
+                                it.cafeNumber != null && it.companyCode != null
+                            }
+                            val company = sampleShift?.companyCode ?: "101"
+                            val settingsPrefs = SettingsPreferences(this@MainActivity)
+                            val enabledCafeNos = settingsPrefs.getEnabledCafeNumbers(
+                                schedule,
+                                ScheduleCache(this@MainActivity).getTeamSchedule(),
+                                authManager.getCafeNo(),
+                                authManager.getUserId()
+                            )
 
-                                val finalCafes = if (enabledCafeNos.isEmpty() && firstShift.cafeNumber != null) {
-                                    listOf(firstShift.cafeNumber)
-                                } else {
-                                    enabledCafeNos
-                                }
+                            val finalCafes = if (enabledCafeNos.isEmpty()) {
+                                val homeCafe = authManager.getCafeNo()
+                                val sampleCafe = sampleShift?.cafeNumber
+                                if (homeCafe != null) listOf(homeCafe) else (if (sampleCafe != null) listOf(sampleCafe) else emptyList())
+                            } else {
+                                enabledCafeNos
+                            }
 
-                                 if (company != null) {
+                            if (finalCafes.isNotEmpty()) {
+                                 val fetchedCafes = mutableSetOf<String>()
+                                 kotlinx.coroutines.coroutineScope {
+                                     finalCafes.map { cafe ->
+                                         fetchedCafes.add(cafe)
+                                         async {
+                                             try {
+                                                 repository.getTeamMembers(cafe, company, start, end, forceRefresh = false)
+                                             } catch (e: Exception) {
+                                                 e.printStackTrace()
+                                             }
+                                         }
+                                     }.awaitAll()
+                                 }
+
+                                 val updatedEnabledCafes = settingsPrefs.getEnabledCafeNumbers(
+                                     schedule,
+                                     ScheduleCache(this@MainActivity).getTeamSchedule(),
+                                     authManager.getCafeNo(),
+                                     authManager.getUserId()
+                                 )
+                                 val newCafes = updatedEnabledCafes.filter { it !in fetchedCafes }
+                                 if (newCafes.isNotEmpty()) {
                                      kotlinx.coroutines.coroutineScope {
-                                         finalCafes.map { cafe ->
+                                         newCafes.map { cafe ->
                                              async {
                                                  try {
                                                      repository.getTeamMembers(cafe, company, start, end, forceRefresh = false)

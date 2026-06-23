@@ -88,4 +88,7 @@ dependencies {
 
     // WorkManager
     implementation("androidx.work:work-runtime-ktx:2.9.0")
+
+    // Wear OS Data Sync
+    implementation(libs.play.services.wearable)
 }

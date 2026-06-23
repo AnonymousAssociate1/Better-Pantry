@@ -29,18 +29,38 @@
                 android:paddingHorizontal="16dp"
                 android:layout_marginBottom="8dp">
 
-                <ImageButton
-                    android:id="@+id/moneyButton"
-                    android:layout_width="40dp"
-                    android:layout_height="40dp"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:src="@drawable/money_bag_24px"
-                    android:scaleType="centerInside"
-                    android:contentDescription="Pay Settings"
-                    android:tint="@color/text_primary"
+                <LinearLayout
+                    android:id="@+id/moneyButtonContainer"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:layout_marginTop="12dp"
                     app:layout_constraintStart_toStartOf="parent"
-                    app:layout_constraintTop_toTopOf="@id/updatedText"
-                    app:layout_constraintBottom_toBottomOf="@id/titleText" />
+                    app:layout_constraintTop_toTopOf="parent"
+                    app:layout_constraintBottom_toBottomOf="parent">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="PAY"
+                        android:textSize="9sp"
+                        android:textColor="@color/text_secondary"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.05" />
+
+                    <ImageButton
+                        android:id="@+id/moneyButton"
+                        android:layout_width="40dp"
+                        android:layout_height="40dp"
+                        android:layout_marginTop="-4dp"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:src="@drawable/ic_pay"
+                        android:scaleType="centerInside"
+                        android:contentDescription="Pay Settings"
+                        android:tint="@color/work_day_green" />
+
+                </LinearLayout>
 
                 <TextView
                     android:id="@+id/updatedText"
@@ -68,18 +88,38 @@
                     app:layout_constraintStart_toStartOf="parent"
                     app:layout_constraintEnd_toEndOf="parent" />
 
-                <ImageButton
-                    android:id="@+id/availabilityButton"
-                    android:layout_width="40dp"
-                    android:layout_height="40dp"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:src="@drawable/ic_relax"
-                    android:scaleType="centerInside"
-                    android:contentDescription="Availability"
-                    android:tint="@color/text_primary"
+                <LinearLayout
+                    android:id="@+id/availabilityButtonContainer"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:layout_marginTop="12dp"
                     app:layout_constraintEnd_toEndOf="parent"
-                    app:layout_constraintTop_toTopOf="@id/updatedText"
-                    app:layout_constraintBottom_toBottomOf="@id/titleText" />
+                    app:layout_constraintTop_toTopOf="parent"
+                    app:layout_constraintBottom_toBottomOf="parent">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="AVAILABILITY"
+                        android:textSize="9sp"
+                        android:textColor="@color/text_secondary"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.05" />
+
+                    <ImageButton
+                        android:id="@+id/availabilityButton"
+                        android:layout_width="40dp"
+                        android:layout_height="40dp"
+                        android:layout_marginTop="-4dp"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:src="@drawable/ic_availability"
+                        android:scaleType="centerInside"
+                        android:contentDescription="Availability"
+                        android:tint="@color/work_day_green" />
+
+                </LinearLayout>
 
             </androidx.constraintlayout.widget.ConstraintLayout>
 
@@ -181,6 +221,7 @@
                             app:tint="@android:color/white" />
 
                         <TextView
+                            android:id="@+id/updateCardText"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
@@ -203,6 +244,81 @@
                     android:background="@color/calendar_border"
                     android:visibility="gone" />
 
+                <!-- Collapsible "YOUR SHIFTS" header -->
+                <androidx.constraintlayout.widget.ConstraintLayout
+                    android:id="@+id/yourShiftsHeaderLayout"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="24dp"
+                    android:layout_marginBottom="16dp"
+                    android:visibility="gone">
+
+                    <LinearLayout
+                        android:id="@+id/yourShiftsTitleContainer"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:background="?attr/selectableItemBackground"
+                        app:layout_constraintStart_toStartOf="parent"
+                        app:layout_constraintTop_toTopOf="parent"
+                        app:layout_constraintBottom_toBottomOf="parent">
+
+                        <TextView
+                            android:id="@+id/yourShiftsTitle"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="YOUR SHIFTS"
+                            android:textSize="18sp"
+                            android:textStyle="bold"
+                            android:textColor="@color/work_day_green"
+                            android:letterSpacing="0.05" />
+
+                        <ImageView
+                            android:id="@+id/yourShiftsChevron"
+                            android:layout_width="24dp"
+                            android:layout_height="24dp"
+                            android:layout_marginStart="4dp"
+                            android:src="@drawable/ic_chevron_down"
+                            app:tint="@color/work_day_green" />
+
+                    </LinearLayout>
+
+                    <!-- Export button container on the right -->
+                    <LinearLayout
+                        android:id="@+id/exportButtonContainer"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:gravity="center"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        app:layout_constraintEnd_toEndOf="parent"
+                        app:layout_constraintTop_toTopOf="parent"
+                        app:layout_constraintBottom_toBottomOf="parent">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="EXPORT"
+                            android:textSize="9sp"
+                            android:textColor="@color/text_secondary"
+                            android:textStyle="bold"
+                            android:letterSpacing="0.05" />
+
+                        <ImageView
+                            android:layout_width="24dp"
+                            android:layout_height="24dp"
+                            android:src="@drawable/ic_export"
+                            app:tint="@color/work_day_green" />
+
+                    </LinearLayout>
+
+                </androidx.constraintlayout.widget.ConstraintLayout>
+
                 <!-- Scheduled shifts list -->
                 <androidx.recyclerview.widget.RecyclerView
                     android:id="@+id/shiftsRecyclerView"
@@ -212,20 +328,82 @@
                     android:clipToPadding="false"
                     android:nestedScrollingEnabled="false" />
 
-                <!-- Available shifts header -->
+                <!-- Export to Calendar header -->
                 <TextView
-                    android:id="@+id/availableShiftsTitle"
+                    android:id="@+id/exportCalendarTitleHeader"
                     android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="EXPORT TO CALENDAR"
+                    android:visibility="gone" />
+
+                <!-- Export to Calendar Card -->
+                <FrameLayout
+                    android:id="@+id/exportCalendarCardContainer"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:visibility="gone">
+
+                    <androidx.cardview.widget.CardView
+                        android:id="@+id/exportCalendarCard"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content">
+                        <!-- Keep dropdown inside so we don't break simple lookups or compiler bindings if any -->
+                        <AutoCompleteTextView
+                            android:id="@+id/calendarDropdown"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:visibility="gone" />
+                        <TextView
+                            android:id="@+id/exportSubtitleText"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:visibility="gone" />
+                    </androidx.cardview.widget.CardView>
+                </FrameLayout>
+
+                <!-- Collapsible "AVAILABLE SHIFTS" header -->
+                <androidx.constraintlayout.widget.ConstraintLayout
+                    android:id="@+id/availableShiftsHeaderLayout"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="24dp"
                     android:layout_marginBottom="16dp"
-                    android:text="AVAILABLE SHIFTS"
-                    android:textSize="18sp"
-                    android:textStyle="bold"
-                    android:textColor="@color/work_day_green"
-                    android:letterSpacing="0.05"
-                    android:layout_gravity="center"
-                    android:visibility="gone" />
+                    android:visibility="gone">
+
+                    <LinearLayout
+                        android:id="@+id/availableShiftsTitleContainer"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:background="?attr/selectableItemBackground"
+                        app:layout_constraintStart_toStartOf="parent"
+                        app:layout_constraintTop_toTopOf="parent"
+                        app:layout_constraintBottom_toBottomOf="parent">
+
+                        <TextView
+                            android:id="@+id/availableShiftsTitle"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="AVAILABLE SHIFTS"
+                            android:textSize="18sp"
+                            android:textStyle="bold"
+                            android:textColor="@color/work_day_green"
+                            android:letterSpacing="0.05" />
+
+                        <ImageView
+                            android:id="@+id/availableShiftsChevron"
+                            android:layout_width="24dp"
+                            android:layout_height="24dp"
+                            android:layout_marginStart="4dp"
+                            android:src="@drawable/ic_chevron_down"
+                            app:tint="@color/work_day_green" />
+
+                    </LinearLayout>
+
+                </androidx.constraintlayout.widget.ConstraintLayout>
 
                 <!-- Available shifts list -->
                 <androidx.recyclerview.widget.RecyclerView

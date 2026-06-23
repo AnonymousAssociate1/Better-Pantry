@@ -149,7 +149,9 @@ class PeopleAdapter(
                     }
                 }
                 
-                resultList.add(PeopleItem.ResetButton)
+                if (filtered.isNotEmpty()) {
+                    resultList.add(PeopleItem.ResetButton)
+                }
                 resultList
             }
 

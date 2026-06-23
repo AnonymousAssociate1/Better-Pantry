@@ -43,6 +43,14 @@ class SettingsFragment : Fragment() {
         settingsPreferences = SettingsPreferences(requireContext())
         moneyPreferences = MoneyPreferences(requireContext())
 
+        val versionTextView: TextView = view.findViewById(R.id.versionTextView)
+        try {
+            val packageInfo = requireContext().packageManager.getPackageInfo(requireContext().packageName, 0)
+            versionTextView.text = "BetterPantry v${packageInfo.versionName}"
+        } catch (e: Exception) {
+            versionTextView.text = "BetterPantry"
+        }
+
         val myPayButton: MaterialButton = view.findViewById(R.id.myPayButton)
         val notificationsButton: MaterialButton = view.findViewById(R.id.notificationsButton)
         val hideAvailabilitySwitch: SwitchMaterial = view.findViewById(R.id.hideAvailabilitySwitch)
@@ -62,6 +70,7 @@ class SettingsFragment : Fragment() {
         combineShiftsSwitch.isChecked = settingsPreferences.combineShifts
         combineShiftsSwitch.setOnCheckedChangeListener { _, isChecked ->
             settingsPreferences.combineShifts = isChecked
+            com.anonymousassociate.betterpantry.widgets.WidgetUpdater.updateAllWidgets(requireContext())
         }
 
         // Setup Auth Frequency Dropdown

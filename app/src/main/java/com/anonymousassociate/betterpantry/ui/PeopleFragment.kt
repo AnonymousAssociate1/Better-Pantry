@@ -125,6 +125,7 @@ class PeopleFragment : Fragment() {
             { employeeId ->
                 scheduleCache.toggleFavorite(employeeId)
                 adapter.updateFavorites(scheduleCache.getFavorites())
+                com.anonymousassociate.betterpantry.widgets.WidgetUpdater.updateAllWidgets(requireContext())
             },
             { associate ->
                 showNicknameDialog(associate)
@@ -133,10 +134,23 @@ class PeopleFragment : Fragment() {
                 settingsPreferences.resetAllNicknamesAndHideLastName()
                 scheduleCache.clearFavorites()
                 adapter.updateFavorites(emptySet())
+                com.anonymousassociate.betterpantry.widgets.WidgetUpdater.updateAllWidgets(requireContext())
                 refreshDataFromCache()
             }
         )
         recyclerView.adapter = adapter
+
+        adapter.registerAdapterDataObserver(object : RecyclerView.AdapterDataObserver() {
+            override fun onChanged() {
+                updateEmptyState()
+            }
+            override fun onItemRangeInserted(positionStart: Int, itemCount: Int) {
+                updateEmptyState()
+            }
+            override fun onItemRangeRemoved(positionStart: Int, itemCount: Int) {
+                updateEmptyState()
+            }
+        })
 
 
         recyclerView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
@@ -278,15 +292,16 @@ class PeopleFragment : Fragment() {
         // Always try to load from cache first to show something immediately
         refreshDataFromCache()
 
-        if (!forceRefresh) {
-            if (!scheduleCache.isTeamScheduleStale()) {
-                // Cache is fresh enough, don't refresh from network
-                swipeRefreshLayout.isRefreshing = false
-                return
-            }
+        val cachedTeam = scheduleCache.getTeamSchedule()
+        val hasCachedData = cachedTeam != null && cachedTeam.isNotEmpty()
+        val willRefresh = forceRefresh || !hasCachedData || scheduleCache.isTeamScheduleStale()
+
+        if (!willRefresh) {
+            swipeRefreshLayout.isRefreshing = false
+            return
         }
 
-        // Use post to ensure the spinner actually shows up if the view is just being created
+        // Show refresh indicator since we are updating something
         swipeRefreshLayout.post {
             swipeRefreshLayout.isRefreshing = true
         }
@@ -301,16 +316,23 @@ class PeopleFragment : Fragment() {
     }
 
     private suspend fun fetchTeamMembers(forceRefresh: Boolean) {
-        var schedule = repository.getSchedule(forceRefresh = false) // Use repo, allow cached
-        
-        if (schedule == null && forceRefresh) {
-             schedule = repository.getSchedule(forceRefresh = true)
-             // Also fetch Availability/TimeOff/MaxHours
-             kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                 repository.getAvailability(true)
-                 repository.getMaxHours(true)
-                 repository.getTimeOff(true)
-             }
+        // Try cache first to ensure we have valid data if network fails.
+        // On a force-refresh, attempt to fetch a fresh schedule.
+        var schedule = repository.getSchedule(forceRefresh = false)
+        if (forceRefresh || schedule == null) {
+            val freshSchedule = repository.getSchedule(forceRefresh = true)
+            if (freshSchedule != null) {
+                schedule = freshSchedule
+            }
+        }
+
+        if (forceRefresh) {
+            // Keep availability/max hours/time off in sync on force refresh
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                repository.getAvailability(true)
+                repository.getMaxHours(true)
+                repository.getTimeOff(true)
+            }
         }
 
         if (schedule != null) {
@@ -333,13 +355,15 @@ class PeopleFragment : Fragment() {
                 enabledCafesList
             }
 
-            val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss")
-            val startStr = LocalDateTime.now().withHour(0).withMinute(0).withSecond(0).format(formatter)
-            val endStr = LocalDateTime.now().plusDays(30).withHour(23).withMinute(59).withSecond(59).format(formatter)
+            val range = com.anonymousassociate.betterpantry.utils.DateRangeUtils.getCoworkerQueryRange()
+            val startStr = range.first
+            val endStr = range.second
 
             val forceThisBatch = forceRefresh || scheduleCache.isTeamScheduleStale()
+            val fetchedCafes = mutableSetOf<String>()
             coroutineScope {
                 enabledCafes.map { cafeNo ->
+                    fetchedCafes.add(cafeNo)
                     async {
                         try {
                             repository.getTeamMembers(
@@ -357,6 +381,35 @@ class PeopleFragment : Fragment() {
                 }.awaitAll()
             }
 
+            // Re-evaluate to check for newly discovered/enabled cafes from cache
+            val updatedEnabledCafes = settingsPreferences.getEnabledCafeNumbers(
+                schedule,
+                scheduleCache.getTeamSchedule(),
+                authManager.getCafeNo(),
+                authManager.getUserId()
+            )
+            val newCafes = updatedEnabledCafes.filter { it !in fetchedCafes }
+            if (newCafes.isNotEmpty()) {
+                coroutineScope {
+                    newCafes.map { cafeNo ->
+                        async {
+                            try {
+                                repository.getTeamMembers(
+                                    cafeNo,
+                                    companyCode,
+                                    startStr,
+                                    endStr,
+                                    forceRefresh = forceThisBatch
+                                )
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                                null
+                            }
+                        }
+                    }.awaitAll()
+                }
+            }
+
             val finalTeamSchedule = scheduleCache.getTeamSchedule() ?: emptyList()
             updateTimestamp()
             startUpdateTimer()
@@ -365,72 +418,67 @@ class PeopleFragment : Fragment() {
     }
 
     private fun processTeamMembers(teamMembers: List<TeamMember>, schedule: com.anonymousassociate.betterpantry.models.ScheduleData? = null) {
-        lifecycleScope.launch {
-            val (uniqueAssociatesList, cafesMap, enabledCafesSet) = withContext(Dispatchers.Default) {
-                val associatesFromTeam = teamMembers.mapNotNull { it.associate }
-                
-                val associatesFromInfo = schedule?.employeeInfo?.map { info ->
-                    Associate(
-                        employeeId = info.employeeId,
-                        firstName = info.firstName,
-                        lastName = info.lastName,
-                        preferredName = null 
-                    )
-                } ?: emptyList()
+        val associatesFromTeam = teamMembers.mapNotNull { it.associate }
+        
+        val associatesFromInfo = schedule?.employeeInfo?.map { info ->
+            Associate(
+                employeeId = info.employeeId,
+                firstName = info.firstName,
+                lastName = info.lastName,
+                preferredName = null 
+            )
+        } ?: emptyList()
 
-                // Merge: prefer associatesFromTeam because they have preferredName
-                val allMap = associatesFromInfo.associateBy { it.employeeId }.toMutableMap()
-                associatesFromTeam.forEach { 
-                     if (it.employeeId != null) allMap[it.employeeId] = it 
-                }
-
-                val uniqueAssociates = allMap.values
-                    .sortedBy { associate ->
-                        if (!associate.preferredName.isNullOrEmpty()) {
-                            associate.preferredName
-                        } else {
-                            associate.firstName
-                        }
-                    }
-                    .filter { it.employeeId != "AVAILABLE_SHIFT" }
-
-                // Build associateCafes map: employeeId -> Set of cafe numbers
-                val associateCafes = mutableMapOf<String, Set<String>>()
-                teamMembers.forEach { member ->
-                    val empId = member.associate?.employeeId
-                    if (empId != null) {
-                        val cafes = mutableSetOf<String>()
-                        
-                        // Add home cafe
-                        member.associate.cafeNumber?.let { cafes.add(it) }
-                        
-                        // Add loaned cafes
-                        member.associate.loanedCafeList?.forEach { cafes.add(it) }
-                        
-                        // Add shift cafes
-                        member.shifts?.mapNotNull { it.cafeNumber }?.forEach { cafes.add(it) }
-                        
-                        associateCafes[empId] = cafes
-                    }
-                }
-
-                val homeCafe = authManager.getCafeNo()
-                val userId = authManager.getUserId()
-                val userEnabledCafes = settingsPreferences.getEnabledCafeNumbers(schedule, teamMembers, homeCafe, userId).toSet()
-                
-                Triple(uniqueAssociates.toList(), associateCafes, userEnabledCafes)
-            }
-
-            allAssociates = uniqueAssociatesList
-            adapter.updateData(uniqueAssociatesList, cafesMap, schedule?.cafeList, enabledCafesSet)
-            
-            val currentQuery = searchBar.text.toString()
-            if (currentQuery.isNotEmpty()) {
-                adapter.filter(currentQuery)
-            }
-            
-            updateEmptyState()
+        // Merge: prefer associatesFromTeam because they have preferredName
+        val allMap = associatesFromInfo.associateBy { it.employeeId }.toMutableMap()
+        associatesFromTeam.forEach { 
+             if (it.employeeId != null) allMap[it.employeeId] = it 
         }
+
+        val uniqueAssociates = allMap.values
+            .sortedBy { associate ->
+                if (!associate.preferredName.isNullOrEmpty()) {
+                    associate.preferredName
+                } else {
+                    associate.firstName
+                }
+            }
+            .filter { it.employeeId != "AVAILABLE_SHIFT" }
+
+        // Build associateCafes map: employeeId -> Set of cafe numbers
+        val associateCafes = mutableMapOf<String, Set<String>>()
+        teamMembers.forEach { member ->
+            val empId = member.associate?.employeeId
+            if (empId != null) {
+                val cafes = mutableSetOf<String>()
+                
+                // Add home cafe
+                member.associate.cafeNumber?.let { cafes.add(it) }
+                
+                // Add loaned cafes
+                member.associate.loanedCafeList?.forEach { cafes.add(it) }
+                
+                // Add shift cafes
+                member.shifts?.mapNotNull { it.cafeNumber }?.forEach { cafes.add(it) }
+                
+                associateCafes[empId] = cafes
+            }
+        }
+
+        val homeCafe = authManager.getCafeNo()
+        val userId = authManager.getUserId()
+        val userEnabledCafes = settingsPreferences.getEnabledCafeNumbers(schedule, teamMembers, homeCafe, userId).toSet()
+
+        val uniqueAssociatesList = uniqueAssociates.toList()
+        allAssociates = uniqueAssociatesList
+        adapter.updateData(uniqueAssociatesList, associateCafes, schedule?.cafeList, userEnabledCafes)
+        
+        val currentQuery = searchBar.text.toString()
+        if (currentQuery.isNotEmpty()) {
+            adapter.filter(currentQuery)
+        }
+        
+        updateEmptyState()
     }
 
     private fun updateEmptyState() {
@@ -483,6 +531,7 @@ class PeopleFragment : Fragment() {
             val lastVal = lastInput.text?.toString()
             settingsPreferences.setCoworkerNickname(employeeId, firstVal, lastVal)
             settingsPreferences.setCoworkerHideLastName(employeeId, hideLastNameSwitch.isChecked)
+            com.anonymousassociate.betterpantry.widgets.WidgetUpdater.updateAllWidgets(requireContext())
             refreshDataFromCache()
         }
 

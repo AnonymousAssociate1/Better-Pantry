@@ -8,6 +8,7 @@ import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.RelativeLayout
 import android.widget.TextView
+import android.widget.ImageView
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
@@ -26,6 +27,9 @@ import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -48,6 +52,17 @@ class PeerScheduleFragment : Fragment() {
     private lateinit var nameText: TextView
     private lateinit var updatedText: TextView
     private lateinit var swipeRefreshLayout: SwipeRefreshLayout
+
+    private var isTheirShiftsExpanded = true
+    private var isAvailableShiftsExpanded = true
+
+    private lateinit var theirShiftsHeaderLayout: View
+    private lateinit var theirShiftsTitleContainer: View
+    private lateinit var theirShiftsChevron: ImageView
+
+    private lateinit var availableShiftsHeaderLayout: View
+    private lateinit var availableShiftsTitleContainer: View
+    private lateinit var availableShiftsChevron: ImageView
 
     private var peer: Associate? = null
     private var peerScheduleData: ScheduleData? = null
@@ -103,6 +118,14 @@ class PeerScheduleFragment : Fragment() {
         nameText = view.findViewById(R.id.nameText)
         updatedText = view.findViewById(R.id.updatedText)
         swipeRefreshLayout = view.findViewById(R.id.swipeRefreshLayout)
+
+        theirShiftsHeaderLayout = view.findViewById(R.id.theirShiftsHeaderLayout)
+        theirShiftsTitleContainer = view.findViewById(R.id.theirShiftsTitleContainer)
+        theirShiftsChevron = view.findViewById(R.id.theirShiftsChevron)
+
+        availableShiftsHeaderLayout = view.findViewById(R.id.availableShiftsHeaderLayout)
+        availableShiftsTitleContainer = view.findViewById(R.id.availableShiftsTitleContainer)
+        availableShiftsChevron = view.findViewById(R.id.availableShiftsChevron)
         
         val nestedScrollView = view.findViewById<androidx.core.widget.NestedScrollView>(R.id.nestedScrollView)
         androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(nestedScrollView) { v, insets ->
@@ -134,6 +157,22 @@ class PeerScheduleFragment : Fragment() {
         
         swipeRefreshLayout.setOnRefreshListener {
             loadPeerSchedule(forceRefresh = true)
+        }
+
+        theirShiftsTitleContainer.setOnClickListener {
+            isTheirShiftsExpanded = !isTheirShiftsExpanded
+            shiftsRecyclerView.visibility = if (isTheirShiftsExpanded) View.VISIBLE else View.GONE
+            theirShiftsChevron.setImageResource(
+                if (isTheirShiftsExpanded) R.drawable.ic_chevron_down else R.drawable.ic_chevron_right
+            )
+        }
+
+        availableShiftsTitleContainer.setOnClickListener {
+            isAvailableShiftsExpanded = !isAvailableShiftsExpanded
+            availableShiftsRecyclerView.visibility = if (isAvailableShiftsExpanded) View.VISIBLE else View.GONE
+            availableShiftsChevron.setImageResource(
+                if (isAvailableShiftsExpanded) R.drawable.ic_chevron_down else R.drawable.ic_chevron_right
+            )
         }
     }
 
@@ -269,28 +308,94 @@ class PeerScheduleFragment : Fragment() {
             }
         }
         
-        swipeRefreshLayout.isRefreshing = true
+        swipeRefreshLayout.post {
+            swipeRefreshLayout.isRefreshing = true
+        }
         lifecycleScope.launch {
             try {
                 // Always fetch fresh base schedule to get updated Available Shifts and Cafe info
                 val schedule = repository.getSchedule(forceRefresh) // Handles caching
                 
                 if (schedule != null) {
-                    val sampleShift = schedule.currentShifts?.firstOrNull { it.cafeNumber != null && it.companyCode != null }
-                    if (sampleShift != null) {
-                        val startStr = LocalDateTime.now().withHour(0).withMinute(0).withSecond(0).format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss"))
-                        val endStr = LocalDateTime.now().plusDays(30).withHour(23).withMinute(59).withSecond(59).format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss"))
-                        
-                        val teamMembers = try {
-                            repository.getTeamMembers(sampleShift.cafeNumber!!, sampleShift.companyCode!!, startStr, endStr, forceRefresh)
-                        } catch(e: Exception) { null }
-                        
-                        if (teamMembers != null) {
-                            updateTimestamp()
-                            // Refresh UI from newly cached data
-                            refreshDataFromCache()
-                            startUpdateTimer()
+                    val enabledCafesList = settingsPreferences.getEnabledCafeNumbers(
+                        schedule,
+                        scheduleCache.getTeamSchedule(),
+                        authManager.getCafeNo(),
+                        authManager.getUserId()
+                    )
+
+                    val sampleShift = schedule.currentShifts?.firstOrNull {
+                        it.cafeNumber != null && it.companyCode != null
+                    }
+                    val companyCode = sampleShift?.companyCode ?: "101"
+
+                    val enabledCafes = if (enabledCafesList.isEmpty()) {
+                        val homeCafe = authManager.getCafeNo()
+                        val sampleCafe = sampleShift?.cafeNumber
+                        if (homeCafe != null) listOf(homeCafe) else (if (sampleCafe != null) listOf(sampleCafe) else emptyList())
+                    } else {
+                        enabledCafesList
+                    }
+
+                    if (enabledCafes.isNotEmpty()) {
+                        val range = com.anonymousassociate.betterpantry.utils.DateRangeUtils.getCoworkerQueryRange()
+                        val startStr = range.first
+                        val endStr = range.second
+
+                        val forceThisBatch = forceRefresh || scheduleCache.isTeamScheduleStale()
+                        val fetchedCafes = mutableSetOf<String>()
+                        coroutineScope {
+                            enabledCafes.map { cafeNo ->
+                                fetchedCafes.add(cafeNo)
+                                async {
+                                    try {
+                                        repository.getTeamMembers(
+                                            cafeNo,
+                                            companyCode,
+                                            startStr,
+                                            endStr,
+                                            forceRefresh = forceThisBatch
+                                        )
+                                    } catch (e: Exception) {
+                                        e.printStackTrace()
+                                        null
+                                    }
+                                }
+                            }.awaitAll()
                         }
+
+                        // Re-evaluate to check for newly discovered/enabled cafes from cache
+                        val updatedEnabledCafes = settingsPreferences.getEnabledCafeNumbers(
+                            schedule,
+                            scheduleCache.getTeamSchedule(),
+                            authManager.getCafeNo(),
+                            authManager.getUserId()
+                        )
+                        val newCafes = updatedEnabledCafes.filter { it !in fetchedCafes }
+                        if (newCafes.isNotEmpty()) {
+                            coroutineScope {
+                                newCafes.map { cafeNo ->
+                                    async {
+                                        try {
+                                            repository.getTeamMembers(
+                                                cafeNo,
+                                                companyCode,
+                                                startStr,
+                                                endStr,
+                                                forceRefresh = forceThisBatch
+                                            )
+                                        } catch (e: Exception) {
+                                            e.printStackTrace()
+                                            null
+                                        }
+                                    }
+                                }.awaitAll()
+                            }
+                        }
+
+                        updateTimestamp()
+                        refreshDataFromCache()
+                        startUpdateTimer()
                     }
                 }
             } catch (e: Exception) {
@@ -345,8 +450,23 @@ class PeerScheduleFragment : Fragment() {
         }
         calendarAdapter.updateSchedule(schedule, context = requireContext(), cafeFilter = effectiveFilter)
         val distinctShifts = shiftsForList.sortedBy { it.startDateTime }
-        shiftsRecyclerView.adapter = ShiftAdapter(distinctShifts, { showShiftDetailDialog(listOf(it), emptyList()) })
-        shiftsRecyclerView.layoutManager = LinearLayoutManager(context)
+        if (distinctShifts.isNotEmpty()) {
+            theirShiftsHeaderLayout.visibility = View.VISIBLE
+            shiftsRecyclerView.visibility = if (isTheirShiftsExpanded) View.VISIBLE else View.GONE
+            theirShiftsChevron.setImageResource(
+                if (isTheirShiftsExpanded) R.drawable.ic_chevron_down else R.drawable.ic_chevron_right
+            )
+            val existingAdapter = shiftsRecyclerView.adapter as? ShiftAdapter
+            if (existingAdapter != null) {
+                existingAdapter.updateData(distinctShifts)
+            } else {
+                shiftsRecyclerView.adapter = ShiftAdapter(distinctShifts, { showShiftDetailDialog(listOf(it), emptyList()) })
+                shiftsRecyclerView.layoutManager = LinearLayoutManager(context)
+            }
+        } else {
+            theirShiftsHeaderLayout.visibility = View.GONE
+            shiftsRecyclerView.visibility = View.GONE
+        }
 
         val availableShifts = schedule.track?.filter { track -> 
             val isTypeAvailable = track.type == "AVAILABLE"
@@ -364,39 +484,47 @@ class PeerScheduleFragment : Fragment() {
          }
          ?.distinctBy { it.shiftId }
          ?.sortedBy { it.startDateTime } ?: emptyList()
-        val availableShiftsTitle = view?.findViewById<View>(R.id.availableShiftsTitle)
+
         if (availableShifts.isNotEmpty()) {
-            availableShiftsRecyclerView.visibility = View.VISIBLE
-            availableShiftsTitle?.visibility = View.VISIBLE
-            val availableAdapter = ShiftAdapter(
-                shifts = availableShifts,
-                onShiftClick = { showShiftDetailDialog(emptyList(), listOf(it)) },
-                subtitleProvider = { shift ->
-                    var subtitle = ""
-                    try {
-                        val trackItem = schedule.track?.filter { 
-                            it.type == "AVAILABLE" && it.primaryShiftRequest?.shift?.shiftId == shift.shiftId 
-                        }?.maxByOrNull { it.primaryShiftRequest?.requestedAt ?: "" }
-                        
-                        val requester = trackItem?.primaryShiftRequest
-                        val requesterName = getEmployeeName(requester?.requesterId)
-                        val timeAgo = getTimeAgo(requester?.requestedAt)
-                        
-                        val workstationId = shift.workstationId ?: shift.workstationCode ?: ""
-                        val workstationName = getWorkstationDisplayName(workstationId, shift.workstationName)
-                        
-                        subtitle = "$workstationName - Posted by $requesterName $timeAgo"
-                    } catch (e: Exception) {
-                        subtitle = shift.workstationName ?: "Shift"
-                    }
-                    subtitle
-                }
+            availableShiftsHeaderLayout.visibility = View.VISIBLE
+            availableShiftsRecyclerView.visibility = if (isAvailableShiftsExpanded) View.VISIBLE else View.GONE
+            availableShiftsChevron.setImageResource(
+                if (isAvailableShiftsExpanded) R.drawable.ic_chevron_down else R.drawable.ic_chevron_right
             )
-            availableShiftsRecyclerView.adapter = availableAdapter
-            availableShiftsRecyclerView.layoutManager = LinearLayoutManager(context)
+            val existingAdapter = availableShiftsRecyclerView.adapter as? ShiftAdapter
+            if (existingAdapter != null) {
+                existingAdapter.updateData(availableShifts)
+            } else {
+                val availableAdapter = ShiftAdapter(
+                    shifts = availableShifts,
+                    onShiftClick = { showShiftDetailDialog(emptyList(), listOf(it)) },
+                    subtitleProvider = { shift ->
+                        var subtitle = ""
+                        try {
+                            val trackItem = schedule.track?.filter { 
+                                it.type == "AVAILABLE" && it.primaryShiftRequest?.shift?.shiftId == shift.shiftId 
+                            }?.maxByOrNull { it.primaryShiftRequest?.requestedAt ?: "" }
+                            
+                            val requester = trackItem?.primaryShiftRequest
+                            val requesterName = getEmployeeName(requester?.requesterId)
+                            val timeAgo = getTimeAgo(requester?.requestedAt)
+                            
+                            val workstationId = shift.workstationId ?: shift.workstationCode ?: ""
+                            val workstationName = getWorkstationDisplayName(workstationId, shift.workstationName)
+                            
+                            subtitle = "$workstationName - Posted by $requesterName $timeAgo"
+                        } catch (e: Exception) {
+                            subtitle = shift.workstationName ?: "Shift"
+                        }
+                        subtitle
+                    }
+                )
+                availableShiftsRecyclerView.adapter = availableAdapter
+                availableShiftsRecyclerView.layoutManager = LinearLayoutManager(context)
+            }
         } else {
+            availableShiftsHeaderLayout.visibility = View.GONE
             availableShiftsRecyclerView.visibility = View.GONE
-            availableShiftsTitle?.visibility = View.GONE
         }
     }
 
@@ -777,27 +905,38 @@ class PeerScheduleFragment : Fragment() {
     private fun findCoworkerShifts(targetShift: TeamShift, teamMembers: List<TeamMember>, focalId: String?): List<EnrichedShift> {
         val coworkerShifts = mutableListOf<EnrichedShift>()
         val myId = authManager.getUserId()
+        var totalChecked = 0
+        var overlapped = 0
+        var sameDayNonOverlapping = 0
         try {
             val targetStart = LocalDateTime.parse(targetShift.startDateTime)
             val targetEnd = LocalDateTime.parse(targetShift.endDateTime)
+            val targetDate = targetStart.toLocalDate()
             teamMembers.forEach { tm ->
                 val memberId = tm.associate?.employeeId
                 // Include everyone including focal (Peer) and Me (User)
                 tm.shifts?.forEach { s ->
                     try {
-                        if (s.startDateTime?.startsWith(targetStart.toLocalDate().toString()) == true && 
-                            LocalDateTime.parse(s.startDateTime).isBefore(targetEnd) && 
-                            LocalDateTime.parse(s.endDateTime).isAfter(targetStart) &&
+                        val sStart = LocalDateTime.parse(s.startDateTime)
+                        val sEnd = LocalDateTime.parse(s.endDateTime)
+                        if (sStart.toLocalDate() == targetDate && 
                             (s.cafeNumber == null || s.cafeNumber == targetShift.cafeNumber)) {
-                            val isFocal = memberId == focalId
-                            val isMe = memberId == myId
-                             val firstName = settingsPreferences.getCoworkerFirstResolved(tm.associate?.employeeId, tm.associate?.firstName, tm.associate?.preferredName)
-                             val lastName = settingsPreferences.getCoworkerLastResolved(tm.associate?.employeeId, tm.associate?.lastName)
-                             coworkerShifts.add(EnrichedShift(shift = s.copy(employeeId = memberId), firstName = firstName, lastName = lastName, isMe = isMe || isFocal, isAvailable = memberId == "AVAILABLE_SHIFT"))
+                            totalChecked++
+                            if (sStart.isBefore(targetEnd) && sEnd.isAfter(targetStart)) {
+                                overlapped++
+                                val isFocal = memberId == focalId
+                                val isMe = memberId == myId
+                                val firstName = settingsPreferences.getCoworkerFirstResolved(tm.associate?.employeeId, tm.associate?.firstName, tm.associate?.preferredName)
+                                val lastName = settingsPreferences.getCoworkerLastResolved(tm.associate?.employeeId, tm.associate?.lastName)
+                                coworkerShifts.add(EnrichedShift(shift = s.copy(employeeId = memberId), firstName = firstName, lastName = lastName, isMe = isMe || isFocal, isAvailable = memberId == "AVAILABLE_SHIFT"))
+                            } else {
+                                sameDayNonOverlapping++
+                            }
                         }
                     } catch (e: Exception) {}
                 }
             }
+            android.util.Log.d("BetterPantry", "findCoworkerShifts (Peer): target=${targetShift.startDateTime}-${targetShift.endDateTime}, totalChecked=$totalChecked, overlapped=$overlapped, sameDayNonOverlapping=$sameDayNonOverlapping")
         } catch (e: Exception) {}
         return coworkerShifts.distinctBy { it.shift.shiftId }
     }
@@ -944,55 +1083,7 @@ class PeerScheduleFragment : Fragment() {
     }
 
     private fun getWorkstationDisplayName(workstationId: String?, fallbackName: String?, workstationCode: String? = null): String {
-        val customNames = mapOf(
-            "QC_2" to "QC 2",
-            "1ST_CASHIER_1" to "Cashier 1",
-            "SANDWICH_2" to "Sandwich 2",
-            "SANDWICH_1" to "Sandwich 1",
-            "SALAD_1" to "Salad 1",
-            "SALAD_2" to "Salad 2",
-            "DTORDERTAKER_1" to "DriveThru",
-            "1ST_DR_1" to "Dining Room",
-            "1st_Cashier" to "Cashier 1",
-            "1st_Dr" to "Dining Room",
-            "DtOrderTaker" to "DriveThru",
-            "Sandwich_1" to "Sandwich 1",
-            "Sandwich_2" to "Sandwich 2",
-            "Qc_2" to "QC 2",
-            "1ST_SANDWICH_1" to "Sandwich 1",
-            "Bake" to "Baker",
-            "BAKER" to "Baker",
-            "SALAD" to "Salad 1",
-            "SANDWICH" to "Sandwich 1",
-            "1ST_CASHIER" to "Cashier 1",
-            "QC_1" to "QC 1",
-            "QC_2" to "QC 2",
-            "DTORDERTAKER" to "DriveThru",
-            "1ST_DR" to "Dining Room",
-            "MANAGER_1" to "Manager",
-            "MANAGER" to "Manager",
-            "MANAGERADMIN_1" to "Manager",
-            "MANAGERADMIN" to "Manager",
-            "PEOPLEMANAGEMENT_1" to "Manager",
-            "PEOPLEMANAGEMENT" to "Manager",
-            "LABOR_MANAGEMENT" to "Manager",
-            "LABORMANAGEMENT" to "Manager",
-            "Labor Management" to "Manager"
-        )
-        
-        var finalName: String? = null
-
-        if (workstationId != null) {
-            finalName = customNames[workstationId]
-        }
-        if (finalName == null && workstationCode != null) {
-            finalName = customNames[workstationCode]
-        }
-        if (finalName == null && fallbackName != null) {
-            finalName = customNames[fallbackName]
-        }
-
-        return finalName ?: fallbackName ?: workstationId ?: "Unknown"
+        return com.anonymousassociate.betterpantry.utils.WorkstationUtils.getDisplayName(workstationId, fallbackName, workstationCode)
     }
 
 

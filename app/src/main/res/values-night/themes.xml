@@ -5,8 +5,8 @@
         <item name="colorPrimaryVariant">@color/work_day_green</item>
         <item name="colorOnPrimary">@color/black</item>
 
-        <item name="colorSecondary">@color/teal_200</item>
-        <item name="colorSecondaryVariant">@color/teal_200</item>
+        <item name="colorSecondary">@color/work_day_green</item>
+        <item name="colorSecondaryVariant">@color/work_day_green</item>
         <item name="colorOnSecondary">@color/black</item>
 
         <!-- Dark mode: dark gray background (matches content) -->

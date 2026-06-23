@@ -16,13 +16,7 @@ class ShiftDetailAdapter(
     private val cafeInfo: CafeInfo?
 ) : RecyclerView.Adapter<ShiftDetailAdapter.ShiftDetailViewHolder>() {
 
-    private val customNames = mapOf(
-        "QC_2" to "QC 2",
-        "1ST_CASHIER_1" to "Cashier 1",
-        "SANDWICH_2" to "Sandwich 2",
-        "DTORDERTAKER_1" to "Drive Through",
-        "1ST_DR_1" to "Dining Room"
-    )
+
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ShiftDetailViewHolder {
         val view = LayoutInflater.from(parent.context)
@@ -56,8 +50,11 @@ class ShiftDetailAdapter(
                 detailDateText.text = "$dayText $startTime - $endTime"
 
                 // Map workstation ID to custom name
-                val workstationId = shift.workstationId ?: ""
-                val workstationName = customNames[workstationId] ?: shift.workstationName
+                val workstationName = com.anonymousassociate.betterpantry.utils.WorkstationUtils.getDisplayName(
+                    shift.workstationId,
+                    shift.workstationName,
+                    shift.workstationCode
+                )
 
                 // Show workstation
                 val workstation = if (!shift.workstationGroupDisplayName.isNullOrEmpty() && !workstationName.isNullOrEmpty()) {

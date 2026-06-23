@@ -257,6 +257,50 @@
                 android:clipChildren="false"
                 android:clipToPadding="false">
 
+                <!-- Collapsible "THEIR SHIFTS" header -->
+                <androidx.constraintlayout.widget.ConstraintLayout
+                    android:id="@+id/theirShiftsHeaderLayout"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="24dp"
+                    android:layout_marginBottom="16dp"
+                    android:visibility="gone">
+
+                    <LinearLayout
+                        android:id="@+id/theirShiftsTitleContainer"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:background="?attr/selectableItemBackground"
+                        app:layout_constraintStart_toStartOf="parent"
+                        app:layout_constraintTop_toTopOf="parent"
+                        app:layout_constraintBottom_toBottomOf="parent">
+
+                        <TextView
+                            android:id="@+id/theirShiftsTitle"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="THEIR SHIFTS"
+                            android:textSize="18sp"
+                            android:textStyle="bold"
+                            android:textColor="@color/work_day_green"
+                            android:letterSpacing="0.05" />
+
+                        <ImageView
+                            android:id="@+id/theirShiftsChevron"
+                            android:layout_width="24dp"
+                            android:layout_height="24dp"
+                            android:layout_marginStart="4dp"
+                            android:src="@drawable/ic_chevron_down"
+                            app:tint="@color/work_day_green" />
+
+                    </LinearLayout>
+
+                </androidx.constraintlayout.widget.ConstraintLayout>
+
                 <!-- Scheduled shifts list -->
                 <androidx.recyclerview.widget.RecyclerView
                     android:id="@+id/shiftsRecyclerView"
@@ -266,20 +310,49 @@
                     android:clipToPadding="false"
                     android:nestedScrollingEnabled="false" />
 
-                <!-- Available shifts header -->
-                <TextView
-                    android:id="@+id/availableShiftsTitle"
-                    android:layout_width="wrap_content"
+                <!-- Collapsible "AVAILABLE SHIFTS" header -->
+                <androidx.constraintlayout.widget.ConstraintLayout
+                    android:id="@+id/availableShiftsHeaderLayout"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="24dp"
                     android:layout_marginBottom="16dp"
-                    android:text="AVAILABLE SHIFTS"
-                    android:textSize="18sp"
-                    android:textStyle="bold"
-                    android:textColor="@color/work_day_green"
-                    android:letterSpacing="0.05"
-                    android:layout_gravity="center"
-                    android:visibility="gone" />
+                    android:visibility="gone">
+
+                    <LinearLayout
+                        android:id="@+id/availableShiftsTitleContainer"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:background="?attr/selectableItemBackground"
+                        app:layout_constraintStart_toStartOf="parent"
+                        app:layout_constraintTop_toTopOf="parent"
+                        app:layout_constraintBottom_toBottomOf="parent">
+
+                        <TextView
+                            android:id="@+id/availableShiftsTitle"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="AVAILABLE SHIFTS"
+                            android:textSize="18sp"
+                            android:textStyle="bold"
+                            android:textColor="@color/work_day_green"
+                            android:letterSpacing="0.05" />
+
+                        <ImageView
+                            android:id="@+id/availableShiftsChevron"
+                            android:layout_width="24dp"
+                            android:layout_height="24dp"
+                            android:layout_marginStart="4dp"
+                            android:src="@drawable/ic_chevron_down"
+                            app:tint="@color/work_day_green" />
+
+                    </LinearLayout>
+
+                </androidx.constraintlayout.widget.ConstraintLayout>
 
                 <!-- Available shifts list -->
                 <androidx.recyclerview.widget.RecyclerView

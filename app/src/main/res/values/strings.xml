@@ -23,4 +23,9 @@
 <!--    **•** Updating info is consistent and functional\n-->
 <!--    **•** Logging in should be more consistent\n-->
 <!--    **•** Notifications show cached version when network unavailable\n-->
+    <!-- Widgets -->
+    <string name="widget_current_staff_label">Currently at Cafe</string>
+    <string name="widget_current_staff_desc">Shows coworkers currently scheduled at the cafe.</string>
+    <string name="widget_next_shift_label">Next Shift</string>
+    <string name="widget_next_shift_desc">Shows your next upcoming shift and scheduled coworkers.</string>
 </resources>

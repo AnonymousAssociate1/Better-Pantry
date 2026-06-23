@@ -67,10 +67,11 @@ class NotificationSettingsDialog(context: Context) : Dialog(context) {
             paycheckConfigContainer.visibility = if (isChecked) View.VISIBLE else View.GONE
             if (isChecked && prefs.paycheckConfig == null) {
                 // Set default config if none exists
-                val default = PaycheckConfig("BIWEEKLY", LocalDate.now().toString(), 5) // Default to Biweekly Friday
+                val default = PaycheckConfig("BIWEEKLY", LocalDate.now().toString(), 5, hour = 9, minute = 0) // Default to Biweekly Friday 9:00 AM
                 prefs.paycheckConfig = default
                 updatePaycheckUI(default)
             }
+            com.anonymousassociate.betterpantry.PaycheckReceiver.checkAndSchedulePaycheck(context)
         }
     }
 
@@ -192,6 +193,21 @@ class NotificationSettingsDialog(context: Context) : Dialog(context) {
             }, now.year, now.monthValue - 1, now.dayOfMonth).show()
         }
 
+        val inputPaycheckTime = findViewById<TextInputEditText>(R.id.inputPaycheckTime)
+        inputPaycheckTime.setOnClickListener {
+            val currentConfig = prefs.paycheckConfig ?: PaycheckConfig("BIWEEKLY")
+            val currentHour = currentConfig.hour ?: 9
+            val currentMinute = currentConfig.minute ?: 0
+
+            android.app.TimePickerDialog(context, { _, hourOfDay, minute ->
+                val config = tempPaycheckConfig?.copy(hour = hourOfDay, minute = minute) ?: PaycheckConfig("BIWEEKLY", hour = hourOfDay, minute = minute)
+                tempPaycheckConfig = config
+                
+                inputPaycheckTime.setText(formatTime(hourOfDay, minute))
+                saveConfig()
+            }, currentHour, currentMinute, false).show()
+        }
+
         val textWatcher = object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
@@ -254,7 +270,7 @@ class NotificationSettingsDialog(context: Context) : Dialog(context) {
         }
         
         prefs.paycheckConfig = configToSave
-        com.anonymousassociate.betterpantry.PaycheckWorker.schedule(context)
+        com.anonymousassociate.betterpantry.PaycheckReceiver.checkAndSchedulePaycheck(context)
     }
 
     private fun updatePaycheckUI(config: PaycheckConfig) {
@@ -339,5 +355,20 @@ class NotificationSettingsDialog(context: Context) : Dialog(context) {
         val daysOfWeek = arrayOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
         val dowPos = (config.dayOfWeek ?: 1) - 1
         dropdownDayOfWeek.setText(daysOfWeek.getOrElse(if (dowPos in 0..6) dowPos else 4) { daysOfWeek[4] }, false)
+
+        val inputPaycheckTime = findViewById<TextInputEditText>(R.id.inputPaycheckTime)
+        val hour = config.hour ?: 9
+        val minute = config.minute ?: 0
+        inputPaycheckTime.setText(formatTime(hour, minute))
+    }
+
+    private fun formatTime(hour: Int, minute: Int): String {
+        val amPm = if (hour >= 12) "PM" else "AM"
+        val displayHour = when {
+            hour == 0 -> 12
+            hour > 12 -> hour - 12
+            else -> hour
+        }
+        return String.format(Locale.getDefault(), "%d:%02d %s", displayHour, minute, amPm)
     }
 }

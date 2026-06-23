@@ -19,8 +19,12 @@ class PantryRepository(private val apiService: PantryApiService, private val sch
         val data = apiService.getSchedule(30)
         if (data != null) {
             scheduleCache.saveSchedule(data)
+            com.anonymousassociate.betterpantry.widgets.WidgetUpdater.updateAllWidgets(scheduleCache.context)
+            return filterSchedule(data)
         }
-        return data?.let { filterSchedule(it) }
+        // Fallback to cache if network call fails or returns null
+        val fallback = scheduleCache.getSchedule()
+        return fallback?.let { filterSchedule(it) }
     }
 
     suspend fun getNotificationCount(): Int {
@@ -35,12 +39,40 @@ class PantryRepository(private val apiService: PantryApiService, private val sch
         endDateTime: String,
         forceRefresh: Boolean = false
     ): List<TeamMember>? {
-        if (!forceRefresh && !scheduleCache.isTeamScheduleStale(cafeNo)) {
+        android.util.Log.d("BetterPantry", "getTeamMembers: cafe=$cafeNo, start=$startDateTime, end=$endDateTime, forceRefresh=$forceRefresh")
+        val cachedStart = scheduleCache.getTeamScheduleStartDate(cafeNo)
+        val cachedEnd = scheduleCache.getTeamScheduleEndDate(cafeNo)
+        
+        val isRangeCovered = if (cachedStart != null && cachedEnd != null) {
+            try {
+                val reqStart = java.time.LocalDateTime.parse(startDateTime)
+                val reqEnd = java.time.LocalDateTime.parse(endDateTime)
+                val cStart = java.time.LocalDateTime.parse(cachedStart)
+                val cEnd = java.time.LocalDateTime.parse(cachedEnd)
+                
+                val covered = !reqStart.isBefore(cStart) && !reqEnd.isAfter(cEnd)
+                android.util.Log.d("BetterPantry", "Range check: reqStart=$reqStart, reqEnd=$reqEnd, cStart=$cStart, cEnd=$cEnd -> covered=$covered")
+                covered
+            } catch (e: Exception) {
+                android.util.Log.e("BetterPantry", "Error parsing range dates: cachedStart=$cachedStart, cachedEnd=$cachedEnd", e)
+                false
+            }
+        } else {
+            android.util.Log.d("BetterPantry", "Range check: cachedStart/End is null")
+            false
+        }
+
+        val isStale = scheduleCache.isTeamScheduleStale(cafeNo)
+        android.util.Log.d("BetterPantry", "Staleness check: cafe=$cafeNo, isStale=$isStale")
+
+        if (!forceRefresh && isRangeCovered && !isStale) {
             val cached = scheduleCache.getTeamSchedule()
             if (cached != null && cached.isNotEmpty()) {
+                 android.util.Log.d("BetterPantry", "Cache hit for cafe $cafeNo")
                  return filterTeamMembers(cached)
             }
         }
+        android.util.Log.d("BetterPantry", "Cache miss - fetching from network for cafe $cafeNo")
         val data = apiService.getTeamMembers(cafeNo, companyCode, startDateTime, endDateTime)
         val populatedData = data?.map { member ->
             val populatedShifts = member.shifts?.map { shift ->
@@ -49,8 +81,10 @@ class PantryRepository(private val apiService: PantryApiService, private val sch
             member.copy(shifts = populatedShifts)
         }
         if (populatedData != null) {
-            scheduleCache.mergeTeamSchedule(populatedData)
+            scheduleCache.mergeTeamSchedule(populatedData, cafeNo, startDateTime, endDateTime)
             scheduleCache.setTeamScheduleUpdateTime(cafeNo, System.currentTimeMillis())
+            scheduleCache.updateTeamScheduleDateRange(cafeNo, startDateTime, endDateTime)
+            com.anonymousassociate.betterpantry.widgets.WidgetUpdater.updateAllWidgets(scheduleCache.context)
         }
         // Fetch from cache to ensure merge result is returned (and filtered)
         // Or just filter 'data' if it was a fresh fetch? 
@@ -107,13 +141,26 @@ class PantryRepository(private val apiService: PantryApiService, private val sch
     }
 
     suspend fun getNotifications(forceRefresh: Boolean = false, page: Int = 0, size: Int = 100): NotificationResponse? {
-        // Notifications are tricky to cache fully because of pages, but we can cache the "latest" list.
-        // The user asked for specific update intervals.
-        // We will fetch fresh if forced or needed.
-        // The existing cache is just a list of NotificationData. 
-        // We might want to just return API response here and let caller handle UI.
-        // But for background checks, we need to compare.
-        return apiService.getNotifications(page, size)
+        val response = apiService.getNotifications(page, size)
+        if (response != null) {
+            val content = response.content
+            if (content != null) {
+                // Merge with locally read statuses from cache
+                val cached = scheduleCache.getCachedNotifications() ?: emptyList()
+                val readIds = cached.filter { it.read == true }.mapNotNull { it.notificationId }.toSet()
+                val merged = content.map { notification ->
+                    if (notification.notificationId != null && readIds.contains(notification.notificationId)) {
+                        notification.copy(read = true)
+                    } else {
+                        notification
+                    }
+                }
+                // Save to cache
+                scheduleCache.saveNotifications(merged)
+                return response.copy(content = merged)
+            }
+        }
+        return response
     }
 
     suspend fun checkAndSendNewNotifications(context: Context) {

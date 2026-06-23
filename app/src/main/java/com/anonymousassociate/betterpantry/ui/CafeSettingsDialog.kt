@@ -44,6 +44,7 @@ class CafeSettingsDialog(context: Context, private val onSettingsSaved: () -> Un
                 settingsPreferences.setCustomCafeName(item.cafeNo, item.customName)
             }
             onSettingsSaved()
+            com.anonymousassociate.betterpantry.widgets.WidgetUpdater.updateAllWidgets(context)
         }
     }
 

@@ -17,6 +17,7 @@ class NotificationPreferences(context: Context) {
         const val KEY_PAYCHECK = "pref_paycheck"
         const val KEY_OTHER = "pref_other"
         const val KEY_PAYCHECK_CONFIG = "pref_paycheck_config"
+        const val KEY_LAST_PAYCHECK_CHECK_DATE = "pref_last_paycheck_check_date"
     }
 
     var shiftPickupsEnabled: Boolean
@@ -43,6 +44,10 @@ class NotificationPreferences(context: Context) {
         get() = prefs.getBoolean(KEY_OTHER, true)
         set(value) = prefs.edit().putBoolean(KEY_OTHER, value).apply()
 
+    var lastPaycheckCheckDate: String?
+        get() = prefs.getString(KEY_LAST_PAYCHECK_CHECK_DATE, null)
+        set(value) = prefs.edit().putString(KEY_LAST_PAYCHECK_CHECK_DATE, value).apply()
+
     var paycheckConfig: PaycheckConfig?
         get() {
             val json = prefs.getString(KEY_PAYCHECK_CONFIG, null)
@@ -65,5 +70,7 @@ data class PaycheckConfig(
     val dayOfMonth1: Int? = null, // e.g., 1, 15
     val dayOfMonth2: Int? = null, // e.g., 15, 30
     val weekIndex1: Int? = null, // e.g., 1 (1st), 2 (2nd), 3 (3rd), 4 (4th), -1 (Last)
-    val weekIndex2: Int? = null  // e.g., 3 (3rd)
+    val weekIndex2: Int? = null, // e.g., 3 (3rd)
+    val hour: Int? = 9,
+    val minute: Int? = 0
 )

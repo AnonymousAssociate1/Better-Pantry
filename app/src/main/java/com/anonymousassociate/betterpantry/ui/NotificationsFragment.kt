@@ -42,6 +42,9 @@ import com.anonymousassociate.betterpantry.models.Shift
 import com.anonymousassociate.betterpantry.ui.adapters.NotificationAdapter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import org.json.JSONObject
 import java.time.Duration
 import java.time.Instant
@@ -179,6 +182,12 @@ class NotificationsFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         updatePermissionButtonVisibility()
+        (requireActivity() as? MainActivity)?.updateNotificationBadge(0)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        (requireActivity() as? MainActivity)?.updateNotificationBadge(0)
     }
 
     private fun updatePermissionButtonVisibility() {
@@ -230,16 +239,23 @@ class NotificationsFragment : Fragment() {
         // Mark as read immediately when clicked
         if (notification.read == false && notification.notificationId != null) {
             // Optimistic update
-            val index = allNotifications.indexOfFirst { it.notificationId == notification.notificationId }
-            if (index != -1) {
-                val updated = allNotifications[index].copy(read = true)
-                allNotifications = allNotifications.toMutableList().apply { set(index, updated) }
-                updateList()
+            val cached = scheduleCache.getCachedNotifications() ?: emptyList()
+            val readIds = (cached.filter { it.read == true }.mapNotNull { it.notificationId } + notification.notificationId).toSet()
+            
+            allNotifications = allNotifications.map { item ->
+                if (item.notificationId != null && readIds.contains(item.notificationId)) {
+                    item.copy(read = true)
+                } else {
+                    item
+                }
             }
+            updateList()
+            scheduleCache.saveNotifications(allNotifications)
             
             lifecycleScope.launch {
                 try {
                     repository.markNotificationAsRead(notification.notificationId)
+                    repository.getNotifications(forceRefresh = true)
                     val count = getFilteredUnreadCount()
                     (requireActivity() as? MainActivity)?.updateNotificationBadge(count)
                 } catch (e: Exception) {
@@ -313,7 +329,8 @@ class NotificationsFragment : Fragment() {
         val messageContainer = dialog.findViewById<LinearLayout>(R.id.messageContainer)
         val closeButton = dialog.findViewById<View>(R.id.closeButton)
 
-        subjectText.text = notification.subject ?: "No Subject"
+        val rawSubject = notification.subject ?: "No Subject"
+        subjectText.text = com.anonymousassociate.betterpantry.utils.WorkstationUtils.replaceWorkstationNamesInText(rawSubject)
 
         // Format date
         notification.createDateTime?.let {
@@ -328,7 +345,7 @@ class NotificationsFragment : Fragment() {
         }
 
         // Render message content (HTML/Table)
-        val message = notification.message ?: ""
+        val message = com.anonymousassociate.betterpantry.utils.WorkstationUtils.replaceWorkstationNamesInText(notification.message ?: "")
         messageContainer.removeAllViews()
         
         if (message.contains("<table", ignoreCase = true)) {
@@ -1113,30 +1130,101 @@ class NotificationsFragment : Fragment() {
         if (!isNested && shift.cafeNumber != null && shift.companyCode != null &&
             shift.startDateTime != null && shift.endDateTime != null) {
 
-            val shiftId = shift.shiftId ?: "${shift.startDateTime}-${shift.workstationId ?: shift.workstationCode}"
-            val cachedMembers = scheduleCache.getTeamMembers(shiftId)
-            if (cachedMembers != null) {
-                updateChart(cachedMembers)
+            val globalTeam = scheduleCache.getTeamSchedule()
+            if (globalTeam != null) {
+                updateChart(globalTeam)
             }
 
-            lifecycleScope.launch {
-                try {
-                    val startOfDay = LocalDateTime.parse(shift.startDateTime)
-                        .with(java.time.LocalTime.MIN)
-                        .format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+            if (globalTeam == null || scheduleCache.isTeamScheduleStale()) {
+                lifecycleScope.launch {
+                    try {
+                        val schedule = repository.getSchedule(forceRefresh = false)
+                        if (schedule != null) {
+                            val prefs = com.anonymousassociate.betterpantry.SettingsPreferences(requireContext())
+                            val enabledCafesList = prefs.getEnabledCafeNumbers(
+                                schedule,
+                                scheduleCache.getTeamSchedule(),
+                                authManager.getCafeNo(),
+                                authManager.getUserId()
+                            )
 
-                    val teamMembers = repository.getTeamMembers(
-                        shift.cafeNumber,
-                        shift.companyCode,
-                        startOfDay,
-                        shift.endDateTime
-                    )
-                    if (teamMembers != null) {
-                        scheduleCache.saveTeamMembers(shiftId, teamMembers)
-                        updateChart(teamMembers)
+                            val sampleShift = schedule.currentShifts?.firstOrNull {
+                                it.cafeNumber != null && it.companyCode != null
+                            }
+                            val companyCode = sampleShift?.companyCode ?: "101"
+
+                            val enabledCafes = if (enabledCafesList.isEmpty()) {
+                                val homeCafe = authManager.getCafeNo()
+                                val sampleCafe = sampleShift?.cafeNumber
+                                if (homeCafe != null) listOf(homeCafe) else (if (sampleCafe != null) listOf(sampleCafe) else emptyList())
+                            } else {
+                                enabledCafesList
+                            }
+
+                            if (enabledCafes.isNotEmpty()) {
+                                val range = com.anonymousassociate.betterpantry.utils.DateRangeUtils.getCoworkerQueryRange()
+                                val startStr = range.first
+                                val endStr = range.second
+
+                                val forceThisBatch = scheduleCache.isTeamScheduleStale()
+                                val fetchedCafes = mutableSetOf<String>()
+                                coroutineScope {
+                                    enabledCafes.map { cafeNo ->
+                                        fetchedCafes.add(cafeNo)
+                                        async {
+                                            try {
+                                                repository.getTeamMembers(
+                                                    cafeNo,
+                                                    companyCode,
+                                                    startStr,
+                                                    endStr,
+                                                    forceRefresh = forceThisBatch
+                                                )
+                                            } catch (e: Exception) {
+                                                e.printStackTrace()
+                                                null
+                                            }
+                                        }
+                                    }.awaitAll()
+                                }
+
+                                val updatedEnabledCafes = prefs.getEnabledCafeNumbers(
+                                    schedule,
+                                    scheduleCache.getTeamSchedule(),
+                                    authManager.getCafeNo(),
+                                    authManager.getUserId()
+                                )
+                                val newCafes = updatedEnabledCafes.filter { it !in fetchedCafes }
+                                if (newCafes.isNotEmpty()) {
+                                    coroutineScope {
+                                        newCafes.map { cafeNo ->
+                                            async {
+                                                try {
+                                                    repository.getTeamMembers(
+                                                        cafeNo,
+                                                        companyCode,
+                                                        startStr,
+                                                        endStr,
+                                                        forceRefresh = forceThisBatch
+                                                    )
+                                                } catch (e: Exception) {
+                                                    e.printStackTrace()
+                                                    null
+                                                }
+                                            }
+                                        }.awaitAll()
+                                    }
+                                }
+
+                                val updatedTeam = scheduleCache.getTeamSchedule()
+                                if (updatedTeam != null) {
+                                    updateChart(updatedTeam)
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
                     }
-                } catch (e: Exception) {
-                    e.printStackTrace()
                 }
             }
         }
@@ -1209,39 +1297,7 @@ class NotificationsFragment : Fragment() {
 
 
     private fun getWorkstationDisplayName(workstationId: String, fallbackName: String?): String {
-        val customNames = mapOf(
-            "QC_2" to "QC 2",
-            "1ST_CASHIER_1" to "Cashier 1",
-            "SANDWICH_2" to "Sandwich 2",
-            "SANDWICH_1" to "Sandwich 1",
-            "DTORDERTAKER_1" to "DriveThru",
-            "1ST_DR_1" to "Dining Room",
-            "1st_Cashier" to "Cashier 1",
-            "1st_Dr" to "Dining Room",
-            "DtOrderTaker" to "DriveThru",
-            "Sandwich_1" to "Sandwich 1",
-            "Sandwich_2" to "Sandwich 2",
-            "Qc_2" to "QC 2",
-            "1ST_SANDWICH_1" to "Sandwich 1",
-            "Bake" to "Baker",
-            "BAKER" to "Baker",
-            "SALAD" to "Salad 1",
-            "SANDWICH" to "Sandwich 1",
-            "1ST_CASHIER" to "Cashier 1",
-            "QC_1" to "QC 1",
-            "QC_2" to "QC 2",
-            "DTORDERTAKER" to "DriveThru",
-            "PEOPLEMANAGEMENT_1" to "Manager",
-            "PEOPLEMANAGEMENT" to "Manager",
-            "LABOR_MANAGEMENT" to "Manager",
-            "LABORMANAGEMENT" to "Manager",
-            "Labor Management" to "Manager"
-        )
-        var name = customNames[workstationId]
-        if (name == null && fallbackName != null) {
-            name = customNames[fallbackName]
-        }
-        return name ?: fallbackName ?: "Unknown"
+        return com.anonymousassociate.betterpantry.utils.WorkstationUtils.getDisplayName(workstationId, fallbackName)
     }
 
     private fun getTimeAgo(requestedAt: String?): String {
@@ -1275,16 +1331,23 @@ class NotificationsFragment : Fragment() {
 
     private fun onMarkAsRead(notificationId: String) {
         // Optimistic update
-        val index = allNotifications.indexOfFirst { it.notificationId == notificationId }
-        if (index != -1) {
-            val updated = allNotifications[index].copy(read = true)
-            allNotifications = allNotifications.toMutableList().apply { set(index, updated) }
-            updateList()
+        val cached = scheduleCache.getCachedNotifications() ?: emptyList()
+        val readIds = (cached.filter { it.read == true }.mapNotNull { it.notificationId } + notificationId).toSet()
+        
+        allNotifications = allNotifications.map { item ->
+            if (item.notificationId != null && readIds.contains(item.notificationId)) {
+                item.copy(read = true)
+            } else {
+                item
+            }
         }
+        updateList()
+        scheduleCache.saveNotifications(allNotifications)
 
         lifecycleScope.launch {
             try {
                 repository.markNotificationAsRead(notificationId)
+                repository.getNotifications(forceRefresh = true)
                 val count = getFilteredUnreadCount()
                 (requireActivity() as? MainActivity)?.updateNotificationBadge(count)
             } catch (e: Exception) {
@@ -1382,7 +1445,16 @@ class NotificationsFragment : Fragment() {
                 val response = repository.getNotifications(forceRefresh = forceRefresh)
                 if (response != null) {
                     val fetched = response.content ?: emptyList()
-                    allNotifications = fetched.sortedByDescending { it.createDateTime }
+                    val cached = scheduleCache.getCachedNotifications() ?: emptyList()
+                    val readIds = cached.filter { it.read == true }.mapNotNull { it.notificationId }.toSet()
+                    val merged = fetched.map { item ->
+                        if (item.notificationId != null && readIds.contains(item.notificationId)) {
+                            item.copy(read = true)
+                        } else {
+                            item
+                        }
+                    }
+                    allNotifications = merged.sortedByDescending { it.createDateTime }
                     scheduleCache.saveNotifications(allNotifications)
                     hasLoaded = true
                     updateList()
