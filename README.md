@@ -7,6 +7,6 @@ This is a community project.
 The Pantry app at Panera is so bad I made my own.
 
 
-**[Here's the app download](https://github.com/AnonymousAssociate1/Better-Pantry/releases/latest)**
+**[Here's the app download](https://AnonymousAssociate1.github.io/Better-Pantry/download.html)**
 
 This app is ***android only.***
