@@ -1,18 +1,15 @@
 <resources>
     <string name="app_name">Better Pantry</string>
     <string name="release_notes">
-**Features**\n
-**•** Support for Multiple Cafes\n
-**•** Time Off in day preview \n
-**•** Nicknames for co-workers and cafes\n
-**•** Toggle cafes and notifications for cafes.\n
-**•** Option to *Post*, *Trade*, and *Cover* shifts rather than just posting them.\n
-**•** Authentication Options\n
-**•** Combine Shifts in Detail View (toggle-able)\n
+**FINAL UPDATE**\n
+I have now quit working for Mother Bread\n
+Therefore, this will be the last update from Joseph\n
 \n
-**Fixes**\n
-**•** Schedule Page\n
-**•** Swapping between pages swaps then loads data\n
+**CHANGES**\n
+**•** Export to Calendar feature\n
+**•** Widgets\n
+**•** Consolidated requests\n
+**•** WearOS app (must be installed by compiling from GitHub)\n
     </string>
 <!--    **Features**\n-->
 <!--    **•** Added option to show pay for shifts on home page\n-->
