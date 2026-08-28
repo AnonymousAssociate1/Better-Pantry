@@ -1,0 +1,41 @@
+name: Update APK Download Redirect
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch Latest Release Asset URL
+        id: get_asset
+        run: |
+          APK_URL=$(curl -s https://api.github.com/repos/${{ github.repository }}/releases/latest | jq -r '.assets[] | select(.name | endswith(".apk")) | .browser_download_url' | head -n 1)
+          echo "APK_URL=$APK_URL" >> $GITHUB_ENV
+
+      - name: Generate Redirect HTML
+        run: |
+          mkdir -p public
+          cat <<EOF > public/download.html
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <meta http-equiv="refresh" content="0; url=${{ env.APK_URL }}" />
+            </head>
+            <body>
+              <p>Redirecting to latest release... <a href="${{ env.APK_URL }}">Click here if it doesn't load.</a></p>
+            </body>
+          </html>
+          EOF
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public
